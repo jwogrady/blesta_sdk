@@ -2,6 +2,7 @@ import argparse
 import os
 from dotenv import load_dotenv
 from api.blesta_api import BlestaApi
+import json
 
 # Load environment variables from .env file
 load_dotenv()
@@ -35,10 +36,9 @@ def main():
 
     # Print the response
     if response.response_code == 200:
-        print("Success:", response.response)
+        print("Success:", json.dumps(response.response, indent=4))
     else:
-        print("Error:", response.errors())
-        print("Raw Response:", response.raw)
+        print("Error:", response.errors)
 
 if __name__ == "__main__":
     main()
