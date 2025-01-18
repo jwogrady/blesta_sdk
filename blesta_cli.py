@@ -8,6 +8,29 @@ from api.blesta_api import BlestaApi
 load_dotenv()
 
 def main():
+    """
+    Entry point for the Blesta API Command Line Interface.
+
+    This function parses command-line arguments, loads API credentials from
+    the environment, initializes the Blesta API, performs the specified API
+    action, and prints the response. It also provides an option to display
+    the details of the last API request made.
+
+    Command-line arguments:
+        --model (str): Blesta API model (e.g., clients).
+        --method (str): Blesta API method (e.g., getList).
+        --action (str): HTTP action to perform (choices: 'GET', 'POST', 'PUT', 'DELETE'; default: 'GET').
+        --params (list of str): Optional key=value pairs (e.g., id=1 status=active).
+        --last-request (bool): Flag to show the last API request made.
+
+    Environment variables:
+        BLESTA_API_URL (str): The URL of the Blesta API.
+        BLESTA_API_USER (str): The username for the Blesta API.
+        BLESTA_API_KEY (str): The API key for the Blesta API.
+
+    Returns:
+        None
+    """
     parser = argparse.ArgumentParser(description="Blesta API Command Line Interface")
     parser.add_argument('--model', required=True, help='Blesta API model (e.g., clients)')
     parser.add_argument('--method', required=True, help='Blesta API method (e.g., getList)')
