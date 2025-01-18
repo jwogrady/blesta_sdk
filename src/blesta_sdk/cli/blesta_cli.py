@@ -2,12 +2,12 @@ import argparse
 import os
 import json
 from dotenv import load_dotenv
-from api.blesta_api import BlestaApi
+from blesta_sdk.api import BlestaApi
 
 # Load environment variables from .env file
 load_dotenv()
 
-def main():
+def cli():
     """
     Entry point for the Blesta API Command Line Interface.
 
@@ -75,4 +75,4 @@ def main():
             print("No previous API request made.")
 
 if __name__ == "__main__":
-    main()
+    cli()
