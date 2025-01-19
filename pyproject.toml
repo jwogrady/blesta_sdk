@@ -4,11 +4,11 @@ build-backend = "hatchling.build"
 
 [project]
 name = "blesta_sdk"
-version = "0.0.1"
+version = "0.0.3-alpha"
 description = "A Python SDK for interacting with Blesta API"
 readme = "README.md"
 authors = [
-    { name = "John Wogrady", email = "john@status26.com" }
+    { name = "jwogrady", email = "john@status26.com" }
 ]
 license = { text = "MIT" }
 requires-python = ">=3.8"
