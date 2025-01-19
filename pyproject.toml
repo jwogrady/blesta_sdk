@@ -11,9 +11,6 @@ authors = [
   { name = "John Wogrady", email = "john@status26.com" }
 ]
 license = { text = "MIT" }
-homepage = "https://github.com/jwogrady/blesta_sdk"
-repository = "https://github.com/jwogrady/blesta_sdk"
-documentation = "https://github.com/jwogrady/blesta_sdk/wiki"
 requires-python = ">=3.8"
 keywords = ["blesta", "sdk", "api", "cli"]
 classifiers = [
@@ -36,7 +33,7 @@ dependencies = [
 blesta-cli = "blesta_sdk.cli.blesta_cli:cli"
 
 [project.urls]
-Homepage = "https://github.com/jwogrady/blesta_sdk"
-Repository = "https://github.com/jwogrady/blesta_sdk"
-Documentation = "https://github.com/jwogrady/blesta_sdk/wiki"
-Issues = "https://github.com/jwogrady/blesta_sdk/issues"
+homepage = "https://github.com/jwogrady/blesta_sdk"
+repository = "https://github.com/jwogrady/blesta_sdk"
+documentation = "https://github.com/jwogrady/blesta_sdk/wiki"
+issues = "https://github.com/jwogrady/blesta_sdk/issues"
