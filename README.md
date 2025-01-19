@@ -1,80 +1,102 @@
 # Blesta Python SDK
 
-Blesta Python SDK provides both a API and CLI for Blesta's REST APi.
+The **Blesta Python SDK** provides an easy-to-use API and CLI interface for interacting with Blesta's REST API.
 
-## Quick and Easy Setup
+## 🚀 Quick and Easy Setup
 
-1. **Create a Project Folder:**  
+1. **Create a Project Folder:**
    ```bash
    mkdir my_project && cd my_project
    ```
 
-2. **Set Up a Python Virtual Environment:**  
+2. **Set Up a Python Virtual Environment:**
    ```bash
    python3 -m venv venv
    source venv/bin/activate  # On Windows, use venv\Scripts\activate
    ```
 
-3. **Install Blesta SDK:**  
+3. **Install Blesta SDK:**
    ```bash
    pip install blesta_cli
    ```
 
-4. **Configure API Credentials:**  
-Admins, log in to Blesta's staff area to generate API credentials. You will need to paste the appropriate vales into the `.env` file that should be placed in this project's root folder. `.env` should look like this:
+4. **Configure API Credentials:**
 
-> ```env
-> BLESTA_API_URL=https://your-blesta-domain.com/api
-> BLESTA_API_USER=your_api_user
-> BLESTA_API_KEY=your_api_key
-> ```
+   Admins can generate API credentials in Blesta's staff area. Save these values in a `.env` file located in your project's root folder. The `.env` file should look like this:
 
-That's it. Let's roll!
+   ```env
+   BLESTA_API_URL=https://your-blesta-domain.com/api
+   BLESTA_API_USER=your_api_user
+   BLESTA_API_KEY=your_api_key
+   ```
 
-## Usage Examples
+  That's it. Let's roll!
+
+## 📖 Usage Examples
 
 ### General Command Structure
 
 ```bash
-python blesta_cli.py --model <model_name> --method <method_name> [--action GET] [--params key=value key2=value2] [--last-request]
+blesta-cli --model <model_name> --method <method_name> [--action GET] [--params key=value key2=value2] [--last-request]
 ```
 
-- **--model:** The API model to interact with (e.g., clients, services).  
-- **--method:** The method to call on the specified model (e.g., getList, get, getCustomFields).  
-- **--action:** The HTTP action to perform (default is GET).  
-- **--params:** Optional parameters to pass to the method (e.g., key=value pairs).  
-- **--last-request:** Repeats the last request made.  
+- **`--model`**: The API model to interact with (e.g., `clients`, `services`).
+- **`--method`**: The method to call on the specified model (e.g., `getList`, `get`, `getCustomFields`).
+- **`--action`**: The HTTP action to perform (default is `GET`).
+- **`--params`**: Optional parameters to pass to the method (e.g., `key=value` pairs).
+- **`--last-request`**: Repeats the last request made.
 
-### Clients Model ([Documentation](https://source-docs.blesta.com/class-Clients.html))
+### Clients Model ([API Documentation](https://source-docs.blesta.com/class-Clients.html))
 
-- **List all clients:**  
+- **List all clients:**
   ```bash
-  python blesta_cli.py --model clients --method getList
+  blesta-cli --model clients --method getList --params status=active --last-request
   ```
 
-- **Get details of a specific client:**  
+- **Get details of a specific client:**
   ```bash
-  python blesta_cli.py --model clients --method get --params id=1
-  ```
-### Services Model ([Documentation](https://source-docs.blesta.com/class-Services.html))
-
-- **List all services:**  
-  ```bash
-  python blesta_cli.py --model services --method getList
+  blesta-cli --model clients --method get --params client_id=1 --last-request
   ```
 
-- **Get details of a specific service:**  
+### Services Model ([API Documentation](https://source-docs.blesta.com/class-Services.html))
+
+- **List all services:**
   ```bash
-  python blesta_cli.py --model services --method get --params id=1
+  blesta-cli --model services --method getList --params status=active --last-request
   ```
 
-- **List all services for a client:**  
+- **Get details of a specific service:**
   ```bash
-  python blesta_cli.py --model services --method getAll --params client_id=1
+  blesta-cli --model services --method get --params id=1
   ```
 
-## Contribution
+- **List all services for a client:**
+  ```bash
+  blesta-cli --model services --method getAll --params client_id=1
+  ```
 
-Contributions are welcome! Please submit a pull request or open an issue for feature requests or bug reports.
+## 🤝 Contribution
 
-Happy Coding!
+We welcome contributions! Whether it's a feature request, bug report, or pull request, we appreciate your input.
+
+### How to Contribute
+1. Fork the repository.
+2. Create a feature branch:
+   ```bash
+   git checkout -b feature/your-feature-name
+   ```
+3. Commit your changes:
+   ```bash
+   git commit -m "Add your feature description here"
+   ```
+4. Push to your branch:
+   ```bash
+   git push origin feature/your-feature-name
+   ```
+5. Open a pull request.
+
+---
+
+This project is licensed under the [MIT License](LICENSE)
+
+Happy coding! 🎉

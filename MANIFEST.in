@@ -3,5 +3,6 @@ recursive-include tests *.py
 include README.md
 include LICENSE
 include requirements.txt
+include requirements-test.txt
 recursive-include tests *.py
 recursive-include src *.pys
