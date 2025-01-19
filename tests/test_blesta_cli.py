@@ -1,32 +1,119 @@
-import subprocess
 import unittest
-import json
+from unittest.mock import patch, MagicMock
+import argparse
+import io
+from blesta_sdk.cli.blesta_cli import cli
 
-class TestBlestaCLI(unittest.TestCase):
+# Import the cli function from blesta_cli
 
-    def run_cli_command(self, model, method, params=None, last_request=False):
-        command = ["python", "blesta_cli.py", "--model", model, "--method", method]
-        if params:
-            command.extend(["--params"] + params)
-        if last_request:
-            command.append("--last-request")
-        result = subprocess.run(command, capture_output=True, text=True, check=True)
-        return result
+class TestBlestaCli(unittest.TestCase):
 
-    def test_get_specific_client(self):
-        result = self.run_cli_command("clients", "get", ["client_id=1"], last_request=True)
-        self.assertEqual(result.returncode, 0)
+    @patch('blesta_sdk.cli.blesta_cli.BlestaApi')
+    @patch('blesta_sdk.cli.blesta_cli.os.getenv')
+    @patch('blesta_sdk.cli.blesta_cli.argparse.ArgumentParser.parse_args')
+    def test_cli_successful_response(self, mock_parse_args, mock_getenv, MockBlestaApi):
+        # Mock command-line arguments
+        mock_parse_args.return_value = argparse.Namespace(
+            model='clients', method='getList', action='GET', params=['id=1'], last_request=False
+        )
 
-        # Print the JSON output for debugging
-        try:
-            response_json = json.loads(result.stdout)
-            print("\nResponse JSON:")
-            print(json.dumps(response_json, indent=4))
-        except json.JSONDecodeError:
-            print("\nFailed to decode JSON response. Raw output:")
-            print(result.stdout)
+        # Mock environment variables
+        mock_getenv.side_effect = lambda key: {
+            'BLESTA_API_URL': 'http://example.com/api',
+            'BLESTA_API_USER': 'user',
+            'BLESTA_API_KEY': 'key'
+        }.get(key)
 
-        self.assertIn("id", result.stdout.lower(), msg=f"Unexpected error: {result.stdout}")
+        # Mock BlestaApi response
+        mock_api_instance = MockBlestaApi.return_value
+        mock_api_instance.submit.return_value = MagicMock(response_code=200, response={'data': 'test'})
+        mock_api_instance.get_last_request.return_value = {'url': 'http://example.com/api', 'args': {'id': 1}}
 
-if __name__ == "__main__":
-    unittest.main(verbosity=2)
+        # Capture stdout
+        with patch('sys.stdout', new_callable=io.StringIO) as mock_stdout:
+            cli()
+            output = mock_stdout.getvalue()
+
+        # Assertions
+        self.assertIn('"data": "test"', output)
+
+    @patch('blesta_sdk.cli.blesta_cli.BlestaApi')
+    @patch('blesta_sdk.cli.blesta_cli.os.getenv')
+    @patch('blesta_sdk.cli.blesta_cli.argparse.ArgumentParser.parse_args')
+    def test_cli_missing_credentials(self, mock_parse_args, mock_getenv, _):
+        # Mock command-line arguments
+        mock_parse_args.return_value = argparse.Namespace(
+            model='clients', method='getList', action='GET', params=['id=1'], last_request=False
+        )
+
+        # Mock environment variables to return None
+        mock_getenv.side_effect = lambda _: None
+
+        # Capture stdout
+        with patch('sys.stdout', new_callable=io.StringIO) as mock_stdout:
+            cli()
+            output = mock_stdout.getvalue()
+
+        # Assertions
+        self.assertIn("Error: Missing API credentials in .env file.", output)
+
+    @patch('blesta_sdk.cli.blesta_cli.BlestaApi')
+    @patch('blesta_sdk.cli.blesta_cli.os.getenv')
+    @patch('blesta_sdk.cli.blesta_cli.argparse.ArgumentParser.parse_args')
+    def test_cli_error_response(self, mock_parse_args, mock_getenv, MockBlestaApi):
+        # Mock command-line arguments
+        mock_parse_args.return_value = argparse.Namespace(
+            model='clients', method='getList', action='GET', params=['id=1'], last_request=False
+        )
+
+        # Mock environment variables
+        mock_getenv.side_effect = lambda key: {
+            'BLESTA_API_URL': 'http://example.com/api',
+            'BLESTA_API_USER': 'user',
+            'BLESTA_API_KEY': 'key'
+        }.get(key)
+
+        # Mock BlestaApi response
+        mock_api_instance = MockBlestaApi.return_value
+        mock_api_instance.submit.return_value = MagicMock(response_code=400, errors=lambda: 'Bad Request')
+
+        # Capture stdout
+        with patch('sys.stdout', new_callable=io.StringIO) as mock_stdout:
+            cli()
+            output = mock_stdout.getvalue()
+
+        # Assertions
+        self.assertIn("Error: Bad Request", output)
+
+    @patch('blesta_sdk.cli.blesta_cli.BlestaApi')
+    @patch('blesta_sdk.cli.blesta_cli.os.getenv')
+    @patch('blesta_sdk.cli.blesta_cli.argparse.ArgumentParser.parse_args')
+    def test_cli_last_request(self, mock_parse_args, mock_getenv, MockBlestaApi):
+        # Mock command-line arguments
+        mock_parse_args.return_value = argparse.Namespace(
+            model='clients', method='getList', action='GET', params=['id=1'], last_request=True
+        )
+
+        # Mock environment variables
+        mock_getenv.side_effect = lambda key: {
+            'BLESTA_API_URL': 'http://example.com/api',
+            'BLESTA_API_USER': 'user',
+            'BLESTA_API_KEY': 'key'
+        }.get(key)
+
+        # Mock BlestaApi response
+        mock_api_instance = MockBlestaApi.return_value
+        mock_api_instance.submit.return_value = MagicMock(response_code=200, response={'data': 'test'})
+        mock_api_instance.get_last_request.return_value = {'url': 'http://example.com/api', 'args': {'id': 1}}
+
+        # Capture stdout
+        with patch('sys.stdout', new_callable=io.StringIO) as mock_stdout:
+            cli()
+            output = mock_stdout.getvalue()
+
+        # Assertions
+        self.assertIn("Last Request URL: http://example.com/api", output)
+        self.assertIn("Last Request Parameters: {'id': 1}", output)
+
+if __name__ == '__main__':
+    unittest.main()
