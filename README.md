@@ -77,10 +77,4 @@ python blesta_cli.py --model <model_name> --method <method_name> [--action GET] 
 
 Contributions are welcome! Please submit a pull request or open an issue for feature requests or bug reports.
 
-## License
-
-[Insert License Information Here]
-
----
-
 Happy Coding!
