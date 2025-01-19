@@ -1,12 +1,6 @@
-# Blesta CLI
+# Blesta Python SDK
 
-Blesta CLI is a refactored version of the `blesta_sdk`, designed as a Command Line Interface (CLI). It offers a simple and efficient way to interact with Blesta's API.
-
-## Features
-
-- Installable via PyPI using `pip` in any Python environment.  
-- Securely manages API credentials with `.env` support through `python-dotenv`.  
-- Provides a fast, consistent, and user-friendly CLI for sending requests and receiving responses.
+Blesta Python SDK provides both a API and CLI for Blesta's REST APi.
 
 ## Quick and Easy Setup
 
@@ -21,22 +15,21 @@ Blesta CLI is a refactored version of the `blesta_sdk`, designed as a Command Li
    source venv/bin/activate  # On Windows, use venv\Scripts\activate
    ```
 
-3. **Install Blesta CLI:**  
+3. **Install Blesta SDK:**  
    ```bash
    pip install blesta_cli
    ```
 
 4. **Configure API Credentials:**  
-Admins, log in to the Blesta staff area to generate API credentials for `blesta_cli`.  
-> Once generated, create a `.env` file in the project's root directory with the following content:  
-> 
+Admins, log in to Blesta's staff area to generate API credentials. You will need to paste the appropriate vales into the `.env` file that should be placed in this project's root folder. `.env` should look like this:
+
 > ```env
 > BLESTA_API_URL=https://your-blesta-domain.com/api
 > BLESTA_API_USER=your_api_user
 > BLESTA_API_KEY=your_api_key
 > ```
 
-That's it! You're ready to go.
+That's it. Let's roll!
 
 ## Usage Examples
 
@@ -63,12 +56,6 @@ python blesta_cli.py --model <model_name> --method <method_name> [--action GET] 
   ```bash
   python blesta_cli.py --model clients --method get --params id=1
   ```
-
-- **Retrieve custom fields for a client:**  
-  ```bash
-  python blesta_cli.py --model clients --method getCustomFields --params client_id=1
-  ```
-
 ### Services Model ([Documentation](https://source-docs.blesta.com/class-Services.html))
 
 - **List all services:**  
