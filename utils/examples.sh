@@ -32,7 +32,7 @@ commands=(
     "blesta-cli --model clients --method getList --params status=active --last-request"
     "blesta-cli --model clients --method get --params client_id=1 --last-request"
     "blesta-cli --model services --method getList --params status=active --last-request"
-    "blesta-cli --model services --method getListCount --params client_id=2 status=active"
+    "blesta-cli --model services --method getListCount --params client_id=1 status=active"
     "blesta-cli --model services --method getAllByClient --params client_id=1 status=active --last-request"
 )
 

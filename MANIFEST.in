@@ -1,8 +1,12 @@
+# Include the MANIFEST.in file itself
+include MANIFEST.in
+
+# Include all .in and .txt files (e.g., requirements)
+include *.in
 include *.txt
+
+# Include all Python files in the tests directory
 recursive-include tests *.py
-include README.md
-include LICENSE
-include requirements.txt
-include requirements-test.txt
-recursive-include tests *.py
-recursive-include src *.pys
+
+# Include all shell scripts in the utils directory
+recursive-include utils *.sh

@@ -48,7 +48,7 @@ blesta-cli --model <model_name> --method <method_name> [--action GET] [--params 
 
 ### Clients Model ([API Documentation](https://source-docs.blesta.com/class-Clients.html))
 
-- **List all clients:**
+- **List all active clients:**
   ```bash
   blesta-cli --model clients --method getList --params status=active --last-request
   ```
@@ -60,19 +60,19 @@ blesta-cli --model <model_name> --method <method_name> [--action GET] [--params 
 
 ### Services Model ([API Documentation](https://source-docs.blesta.com/class-Services.html))
 
-- **List all services:**
+- **List all active services:**
   ```bash
   blesta-cli --model services --method getList --params status=active --last-request
   ```
 
-- **Get details of a specific service:**
+- **Count the active services for a client:**
   ```bash
-  blesta-cli --model services --method get --params id=1
+  blesta-cli --model services --method getListCount --params client_id=1 status=active
   ```
 
 - **List all services for a client:**
   ```bash
-  blesta-cli --model services --method getAll --params client_id=1
+  blesta-cli --model services --method getAllByClient --params client_id=1 status=active --last-request
   ```
 
 ## 🤝 Contribution
