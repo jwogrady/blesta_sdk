@@ -3,6 +3,11 @@ from unittest.mock import patch, MagicMock
 import argparse
 import io
 from blesta_sdk.cli.blesta_cli import cli
+from dotenv import load_dotenv
+import os
+
+if os.path.exists('.env'):
+    load_dotenv()
 
 # Import the cli function from blesta_cli
 
