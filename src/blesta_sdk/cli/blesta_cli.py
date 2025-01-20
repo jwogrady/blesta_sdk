@@ -7,6 +7,7 @@ from blesta_sdk.api import BlestaApi
 # Load environment variables from .env file
 load_dotenv()
 
+
 def cli():
     """
     Entry point for the Blesta API Command Line Interface.
@@ -32,11 +33,26 @@ def cli():
         None
     """
     parser = argparse.ArgumentParser(description="Blesta API Command Line Interface")
-    parser.add_argument('--model', required=True, help='Blesta API model (e.g., clients)')
-    parser.add_argument('--method', required=True, help='Blesta API method (e.g., getList)')
-    parser.add_argument('--action', choices=['GET', 'POST', 'PUT', 'DELETE'], default='GET', help='HTTP action')
-    parser.add_argument('--params', nargs='*', help='Optional key=value pairs (e.g., id=1 status=active)')
-    parser.add_argument('--last-request', action='store_true', help='Show the last API request made')
+    parser.add_argument(
+        "--model", required=True, help="Blesta API model (e.g., clients)"
+    )
+    parser.add_argument(
+        "--method", required=True, help="Blesta API method (e.g., getList)"
+    )
+    parser.add_argument(
+        "--action",
+        choices=["GET", "POST", "PUT", "DELETE"],
+        default="GET",
+        help="HTTP action",
+    )
+    parser.add_argument(
+        "--params",
+        nargs="*",
+        help="Optional key=value pairs (e.g., id=1 status=active)",
+    )
+    parser.add_argument(
+        "--last-request", action="store_true", help="Show the last API request made"
+    )
 
     args = parser.parse_args()
 
@@ -50,7 +66,7 @@ def cli():
         return
 
     # Parse key=value arguments into a dictionary
-    params = dict(param.split('=') for param in args.params) if args.params else {}
+    params = dict(param.split("=") for param in args.params) if args.params else {}
 
     # Initialize the API
     api = BlestaApi(url, user, key)
@@ -69,10 +85,11 @@ def cli():
     if args.last_request:
         last_request = api.get_last_request()
         if last_request:
-            print("\nLast Request URL:", last_request['url'])
-            print("Last Request Parameters:", last_request['args'])
+            print("\nLast Request URL:", last_request["url"])
+            print("Last Request Parameters:", last_request["args"])
         else:
             print("No previous API request made.")
+
 
 if __name__ == "__main__":
     cli()
