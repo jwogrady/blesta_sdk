@@ -17,7 +17,7 @@ The **Blesta Python SDK** provides an easy-to-use API and CLI interface for inte
 
 3. **Install Blesta SDK:**
    ```bash
-   pip install blesta_cli
+   pip install blesta_sdk
    ```
 
 4. **Configure API Credentials:**
