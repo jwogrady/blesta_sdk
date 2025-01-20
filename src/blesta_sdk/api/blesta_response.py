@@ -1,6 +1,5 @@
-### blesta_response.py
-
 import json
+
 
 class BlestaResponse:
     """
@@ -25,7 +24,7 @@ class BlestaResponse:
         :return: A dictionary if 'response' exists, else None
         """
         formatted = self._format_response()
-        return formatted.get('response')
+        return formatted.get("response")
 
     @property
     def response_code(self):
@@ -53,7 +52,7 @@ class BlestaResponse:
         """
         if self._response_code != 200:
             formatted = self._format_response()
-            return formatted.get('errors', {'error': formatted})
+            return formatted.get("errors", {"error": formatted})
         return False
 
     def _format_response(self):

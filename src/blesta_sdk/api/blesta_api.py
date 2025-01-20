@@ -2,6 +2,7 @@ import requests
 from requests.auth import HTTPBasicAuth
 from .blesta_response import BlestaResponse
 
+
 class BlestaApi:
     """
     Blesta API processor
@@ -15,7 +16,7 @@ class BlestaApi:
         :param user: The API user
         :param key: The API key
         """
-        self.url = url.rstrip('/') + '/'
+        self.url = url.rstrip("/") + "/"
         self.user = user
         self.key = key
         self._last_request = None
@@ -37,22 +38,30 @@ class BlestaApi:
             args = {}
 
         url = f"{self.url}{model}/{method}.json"
-        self._last_request = {'url': url, 'args': args}
+        self._last_request = {"url": url, "args": args}
 
         try:
             if action == "GET":
-                response = requests.get(url, params=args, auth=HTTPBasicAuth(self.user, self.key))
+                response = requests.get(
+                    url, params=args, auth=HTTPBasicAuth(self.user, self.key)
+                )
             elif action == "POST":
-                response = requests.post(url, data=args, auth=HTTPBasicAuth(self.user, self.key))
+                response = requests.post(
+                    url, data=args, auth=HTTPBasicAuth(self.user, self.key)
+                )
             elif action == "PUT":
-                response = requests.put(url, data=args, auth=HTTPBasicAuth(self.user, self.key))
+                response = requests.put(
+                    url, data=args, auth=HTTPBasicAuth(self.user, self.key)
+                )
             elif action == "DELETE":
-                response = requests.delete(url, data=args, auth=HTTPBasicAuth(self.user, self.key))
+                response = requests.delete(
+                    url, data=args, auth=HTTPBasicAuth(self.user, self.key)
+                )
             else:
                 raise ValueError("Invalid HTTP action specified.")
 
             return BlestaResponse(response.text, response.status_code)
-        
+
         except requests.RequestException as e:
             return BlestaResponse(str(e), 500)
 
