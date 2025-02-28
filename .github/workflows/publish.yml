@@ -26,11 +26,13 @@ jobs:
         with:
           python-version: "3.x"
 
-      - name: Build release distributions
+      - name: Install dependencies
         run: |
-          # NOTE: put your own distribution build steps here.
-          python -m pip install build
-          python -m build
+          python -m pip install --upgrade pip
+          pip install uv
+
+      - name: Build release distributions
+        run: uv build
 
       - name: Upload distributions
         uses: actions/upload-artifact@v4
@@ -65,6 +67,4 @@ jobs:
           path: dist/
 
       - name: Publish release distributions to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          packages-dir: dist/
+        run: uv publish --token ${{ secrets.PYPI_TOKEN }}
