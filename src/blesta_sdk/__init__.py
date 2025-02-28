@@ -1,3 +1,3 @@
-from . import api, cli
+from . import api, cli, core
 
-__all__ = ["api", "cli"]
+__all__ = ["api", "cli", "core"]
