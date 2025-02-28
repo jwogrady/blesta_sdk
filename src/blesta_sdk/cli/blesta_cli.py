@@ -2,7 +2,7 @@ import argparse
 import os
 import json
 from dotenv import load_dotenv
-from blesta_sdk.api import BlestaApi
+from blesta_sdk.api import BlestaRequest
 
 # Load environment variables from .env file
 load_dotenv()
@@ -69,7 +69,7 @@ def cli():
     params = dict(param.split("=") for param in args.params) if args.params else {}
 
     # Initialize the API
-    api = BlestaApi(url, user, key)
+    api = BlestaRequest(url, user, key)
 
     # Perform the API action
     response = api.submit(args.model, args.method, params, args.action)
