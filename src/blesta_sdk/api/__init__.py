@@ -1,3 +1,3 @@
-from .blesta_api import BlestaApi
+from .blesta_request import BlestaRequest
 
-__all__ = ["BlestaApi"]
+__all__ = ["BlestaRequest"]
