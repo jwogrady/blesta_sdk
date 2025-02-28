@@ -1,6 +1,6 @@
 # Blesta Python SDK
 
-The **Blesta Python SDK** provides an easy-to-use API and CLI interface for interacting with Blesta's REST API.
+The **Blesta Python SDK** offers an intuitive API and CLI interface for seamless interaction with Blesta's REST API.
 
 ## 🚀 Quick and Easy Setup
 
@@ -22,7 +22,7 @@ The **Blesta Python SDK** provides an easy-to-use API and CLI interface for inte
 
 4. **Configure API Credentials:**
 
-   Admins can generate API credentials in Blesta's staff area. Save these values in a `.env` file located in your project's root folder. The `.env` file should look like this:
+   Generate API credentials in Blesta's staff area and save them in a `.env` file in your project's root folder:
 
    ```env
    BLESTA_API_URL=https://your-blesta-domain.com/api
@@ -75,25 +75,74 @@ blesta-cli --model <model_name> --method <method_name> [--action GET] [--params 
   blesta-cli --model services --method getAllByClient --params client_id=1 status=active --last-request
   ```
 
+## 📂 Project Structure
+
+Here's an overview of the project structure:
+
+```
+.
+├── LICENSE
+├── README.md
+├── examples
+│   └── examples.sh
+├── pyproject.toml
+├── src
+│   └── blesta_sdk
+│       ├── __init__.py
+│       ├── core
+│       │   ├── __init__.py
+│       │   └── blesta_response.py
+│       ├── api
+│       │   ├── __init__.py
+│       │   └── blesta_request.py
+│       └── cli
+│           ├── __init__.py
+│           └── blesta_cli.py
+├── tests
+│   ├── __init__.py
+│   └── test_blesta_sdk.py
+└── uv.lock
+```
+
+- **LICENSE**: The license file for the project.
+- **README.md**: The main documentation file for the project.
+- **examples/**: Contains example scripts and usage.
+- **pyproject.toml**: Configuration file for the project.
+- **src/**: The source code for the Blesta SDK.
+  - **blesta_sdk/**: The main package for the SDK.
+    - **core/**: Core functionality and response handling.
+    - **api/**: API request handling.
+    - **cli/**: Command-line interface implementation.
+- **tests/**: Unit tests for the SDK.
+- **uv.lock**: Lock file for dependencies.
+
 ## 🤝 Contribution
 
 We welcome contributions! Whether it's a feature request, bug report, or pull request, we appreciate your input.
 
 ### How to Contribute
-1. Fork the repository.
-2. Create a feature branch:
+
+1. **Fork the repository.**
+2. **Create a feature branch:**
    ```bash
    git checkout -b feature/your-feature-name
    ```
-3. Commit your changes:
+3. **Commit your changes:**
    ```bash
    git commit -m "Add your feature description here"
    ```
-4. Push to your branch:
+4. **Push to your branch:**
    ```bash
    git push origin feature/your-feature-name
    ```
-5. Open a pull request.
+5. **Open a pull request:**
+   - Push your branch to GitHub.
+   - Go to the repository on GitHub.
+   - Click on the "Pull requests" tab.
+   - Click "New pull request".
+   - Select your branch and the main branch.
+   - Add a descriptive title and detailed description.
+   - Click "Create pull request".
 
 ---
 
