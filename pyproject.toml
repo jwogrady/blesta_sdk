@@ -1,10 +1,10 @@
 [project]
 name = "blesta_sdk"
-version = "0.1.0"
+version = "0.1.5"
 description = "A SDK for integrating with Blesta"
 readme = "README.md"
 authors = [
-    { name = "John W. O'Grady"}
+    { name = "jwogrady"}
 ]
 requires-python = ">=3.13"
 dependencies = [
@@ -25,4 +25,9 @@ dev = [
     "pytest>=8.3.4",
     "pytest-cov>=6.0.0",
     "ruff>=0.9.9",
+]
+
+[tool.uv]
+indexes = [
+    { name = "pypi", url = "https://pypi.org/simple/", publish-url = "https://upload.pypi.org/legacy/" }
 ]
