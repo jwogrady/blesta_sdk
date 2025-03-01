@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.6] - 2025-02-28
+
+### Changed
+- Updated `requires-python` to `>=3.9` to ensure compatibility with dependencies.
+- Removed `indexes` field from `pyproject.toml` and used `index-url` and `publish-url` directly.
+
 ## [1.5.0] - 2025-02-28
 
 ### Added

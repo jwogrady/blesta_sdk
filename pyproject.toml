@@ -1,12 +1,12 @@
 [project]
 name = "blesta_sdk"
-version = "0.1.5"
+version = "0.1.6"  # Bump the version number
 description = "A SDK for integrating with Blesta"
 readme = "README.md"
 authors = [
     { name = "jwogrady"}
 ]
-requires-python = ">=3.13"
+requires-python = ">=3.9"  # Ensure compatibility with Python 3.9
 dependencies = [
     "python-dotenv>=1.0.1",
     "requests>=2.32.3",
@@ -28,6 +28,5 @@ dev = [
 ]
 
 [tool.uv]
-indexes = [
-    { name = "pypi", url = "https://pypi.org/simple/", publish-url = "https://upload.pypi.org/legacy/" }
-]
+index-url = "https://pypi.org/simple/"
+publish-url = "https://upload.pypi.org/legacy/"
