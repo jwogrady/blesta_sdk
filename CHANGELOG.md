@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-02-28
+
+### Added
+- Time-series report helper: `BlestaRequest.get_report_series()` collects monthly report data across a date range into a flat list with `_period` metadata.
+- Generator variant: `BlestaRequest.get_report_series_pages()` yields `(period, response)` tuples for memory-efficient iteration over monthly reports.
+- Optional pandas integration: `BlestaResponse.to_dataframe()` converts CSV or JSON responses to pandas DataFrames (requires pandas to be installed separately).
+- Internal `_month_boundaries()` date range utility for generating monthly date intervals.
+
+## [0.2.0] - 2026-02-28
+
+### Fixed
+- HTTP status codes now pass through correctly. Previously 401/403/404 responses were reported as 500 due to `raise_for_status()` swallowing the real status code.
+- CSV responses (e.g., from `report_manager/fetchAll`) no longer trigger false "Invalid JSON response" errors.
+
+### Added
+- CSV response detection: `BlestaResponse.is_json`, `is_csv`, and `csv_data` properties for automatic format handling.
+- Pagination: `BlestaRequest.get_all_pages()` generator and `get_all()` list helper for auto-paginating through API results.
+- Report helper: `BlestaRequest.get_report()` for fetching Blesta reports with proper `vars[]` parameter formatting.
+
 ## [0.1.7] - 2026-02-28
 
 ### Fixed

@@ -66,6 +66,61 @@ response = api.delete("clients", "delete", {"client_id": 1})
 print(api.get_last_request())  # {"url": "...", "args": {...}}
 ```
 
+### Pagination
+
+```python
+# Auto-paginate through all results (returns a list)
+all_invoices = api.get_all("invoices", "getList", {"status": "active"})
+
+# Memory-efficient generator for large datasets
+for invoice in api.get_all_pages("invoices", "getList", {"status": "active"}):
+    print(invoice["id"])
+```
+
+### Reports
+
+```python
+# Fetch a Blesta report (handles vars[] parameter format automatically)
+response = api.get_report("package_revenue", "2025-01-01", "2025-01-31")
+
+# Reports return CSV — use .csv_data to get parsed rows
+for row in response.csv_data:
+    print(row["Package"], row["Revenue"])
+
+# Check response format
+print(response.is_csv)   # True
+print(response.is_json)  # False
+```
+
+### Time-Series Reports
+
+```python
+# Fetch monthly revenue reports for an entire date range
+rows = api.get_report_series("package_revenue", "2020-01", "2026-02")
+for row in rows:
+    print(row["_period"], row["Package"], row["Revenue"])
+
+# Memory-efficient generator for large ranges
+for period, response in api.get_report_series_pages("tax_liability", "2024-01", "2024-12"):
+    if response.status_code == 200:
+        print(f"{period}: {len(response.csv_data)} rows")
+    else:
+        print(f"{period}: error {response.status_code}")
+```
+
+### DataFrame Conversion (optional)
+
+```python
+# Requires: pip install pandas
+response = api.get_report("package_revenue", "2025-01-01", "2025-01-31")
+df = response.to_dataframe()
+print(df.head())
+
+# Works with JSON responses too
+response = api.get("clients", "getList", {"status": "active"})
+df = response.to_dataframe()
+```
+
 ### CLI
 
 #### General Command Structure
