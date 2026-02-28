@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 import json
+from typing import Any, Optional
 
 
 class BlestaResponse:
@@ -6,37 +9,46 @@ class BlestaResponse:
     Blesta API response handler.
     """
 
-    def __init__(self, response, response_code):
+    def __init__(self, response: str, status_code: int):
         """
         Initializes the BlestaResponse instance.
 
         :param response: The raw response data from an API request.
-        :param response_code: The HTTP response code for the request.
+        :param status_code: The HTTP status code for the request.
         """
         self._raw = response
-        self._response_code = response_code
+        self._status_code = status_code
 
     @property
-    def response(self):
+    def response(self) -> Optional[Any]:
         """
         Returns the parsed 'response' data from the API request.
 
-        :return: A dictionary if 'response' exists, else None.
+        :return: The value of the 'response' key if present, else None.
         """
         formatted = self._format_response()
         return formatted.get("response")
 
     @property
-    def response_code(self):
+    def status_code(self) -> int:
         """
-        Returns the HTTP response code.
+        Returns the HTTP status code.
 
-        :return: The HTTP response code for the request.
+        :return: The HTTP status code for the request.
         """
-        return self._response_code
+        return self._status_code
 
     @property
-    def raw(self):
+    def response_code(self) -> int:
+        """
+        Alias for :attr:`status_code` (deprecated, use ``status_code``).
+
+        :return: The HTTP status code for the request.
+        """
+        return self._status_code
+
+    @property
+    def raw(self) -> str:
         """
         Returns the raw API response.
 
@@ -44,29 +56,20 @@ class BlestaResponse:
         """
         return self._raw
 
-    @property
-    def status_code(self):
-        """
-        Returns the HTTP response code.
-
-        :return: The HTTP response code for the request.
-        """
-        return self._response_code
-
-    def errors(self):
+    def errors(self) -> Optional[dict[str, Any]]:
         """
         Returns any errors present in the response.
 
-        :return: Dictionary of errors or False if no errors.
+        :return: Dictionary of errors, or None if no errors.
         """
         formatted = self._format_response()
-        if self._response_code != 200:
+        if self._status_code != 200:
             return formatted.get("errors", {"error": "Invalid JSON response"})
         if "error" in formatted:
             return {"error": formatted["error"]}
-        return False
+        return None
 
-    def _format_response(self):
+    def _format_response(self) -> dict[str, Any]:
         """
         Parses the raw response into a dictionary.
 
