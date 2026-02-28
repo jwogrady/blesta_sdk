@@ -4,7 +4,7 @@ from blesta_sdk.core import BlestaResponse
 from urllib.parse import urljoin
 import logging
 
-logging.basicConfig(level=logging.ERROR)
+logger = logging.getLogger(__name__)
 
 
 class BlestaRequest:
@@ -103,7 +103,7 @@ class BlestaRequest:
             return BlestaResponse(response.text, response.status_code)
 
         except requests.RequestException as e:
-            logging.error(f"Request failed: {e}")
+            logger.error(f"Request failed: {e}")
             return BlestaResponse(str(e), 500)
 
     def get_last_request(self):

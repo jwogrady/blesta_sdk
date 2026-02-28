@@ -1,6 +1,6 @@
 [project]
 name = "blesta_sdk"
-version = "0.1.6"  # Bump the version number
+version = "0.1.7"  # Bump the version number
 description = "A SDK for integrating with Blesta"
 readme = "README.md"
 authors = [
