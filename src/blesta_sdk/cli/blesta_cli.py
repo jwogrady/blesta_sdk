@@ -66,7 +66,9 @@ def cli():
         return
 
     # Parse key=value arguments into a dictionary
-    params = dict(param.split("=") for param in args.params) if args.params else {}
+    params = (
+        dict(param.split("=", 1) for param in args.params) if args.params else {}
+    )
 
     # Initialize the API
     api = BlestaRequest(url, user, key)
@@ -75,7 +77,7 @@ def cli():
     response = api.submit(args.model, args.method, params, args.action)
 
     # Print the response
-    if response.response_code == 200:
+    if response.status_code == 200:
         formatted_response = json.dumps(response.response, indent=4)
         print(formatted_response)
     else:

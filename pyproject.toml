@@ -27,6 +27,11 @@ dev = [
     "ruff>=0.9.9",
 ]
 
+[tool.pytest.ini_options]
+markers = [
+    "integration: tests that make live API calls (deselect with '-m \"not integration\"')",
+]
+
 [tool.uv]
 index-url = "https://pypi.org/simple/"
 publish-url = "https://upload.pypi.org/legacy/"
