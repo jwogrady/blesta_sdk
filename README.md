@@ -48,7 +48,7 @@ api = BlestaRequest("https://your-blesta-domain.com/api", "your_user", "your_key
 
 # GET request
 response = api.get("clients", "getList", {"status": "active"})
-if response.response_code == 200:
+if response.status_code == 200:
     print(response.response)  # parsed JSON "response" field
 else:
     print(response.errors())
@@ -82,7 +82,7 @@ blesta --model <model_name> --method <method_name> [--action GET] [--params key=
 
 The CLI reads `BLESTA_API_URL`, `BLESTA_API_USER`, and `BLESTA_API_KEY` from a `.env` file in the current directory.
 
-#### Clients Model ([API Documentation](https://source-docs.blesta.com/class-Clients.html))
+#### Clients Model ([Source Docs](https://source-docs.blesta.com/class-Clients.html))
 
 - **List all active clients:**
   ```bash
@@ -94,7 +94,7 @@ The CLI reads `BLESTA_API_URL`, `BLESTA_API_USER`, and `BLESTA_API_KEY` from a `
   blesta --model clients --method get --params client_id=1 --last-request
   ```
 
-#### Services Model ([API Documentation](https://source-docs.blesta.com/class-Services.html))
+#### Services Model ([Source Docs](https://source-docs.blesta.com/class-Services.html))
 
 - **List all active services:**
   ```bash
@@ -184,6 +184,12 @@ We welcome contributions! Whether it's a feature request, bug report, or pull re
    - Select your branch and the main branch.
    - Add a descriptive title and detailed description.
    - Click "Create pull request".
+
+## 📚 Blesta API Reference
+
+- [API Guide](https://docs.blesta.com/developers/api) — authentication, URL structure, error codes
+- [Models](https://source-docs.blesta.com/packages/blesta-app-models.html) — all 63 available API models
+- [Controllers](https://source-docs.blesta.com/packages/blesta-app-controllers.html) — admin, client, and system controllers
 
 ---
 
