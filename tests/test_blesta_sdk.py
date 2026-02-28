@@ -3,6 +3,7 @@ import requests
 from unittest.mock import patch, Mock
 from blesta_sdk.api.blesta_request import BlestaRequest
 from blesta_sdk.core import BlestaResponse
+from blesta_sdk.cli.blesta_cli import cli
 from dotenv import load_dotenv
 import os
 import json
@@ -99,6 +100,118 @@ def test_format_response_invalid_json():
 def test_blesta_response_errors():
     response = BlestaResponse('{"errors": {"message": "Error occurred"}}', 400)
     assert response.errors() == {"message": "Error occurred"}
+
+def test_blesta_response_response_code():
+    response = BlestaResponse('{"response": {"id": 1}}', 200)
+    assert response.response_code == 200
+
+
+def test_blesta_response_no_errors_on_success():
+    response = BlestaResponse('{"response": {"id": 1}}', 200)
+    assert response.errors() is False
+
+
+def test_blesta_response_no_response_key():
+    response = BlestaResponse('{"other": "data"}', 200)
+    assert response.response is None
+
+
+# --- CLI tests ---
+
+
+def test_cli_missing_credentials(capsys):
+    with patch.dict(os.environ, {"BLESTA_API_URL": "", "BLESTA_API_USER": "", "BLESTA_API_KEY": ""}, clear=False), \
+         patch("sys.argv", ["blesta", "--model", "clients", "--method", "getList"]):
+        cli()
+    captured = capsys.readouterr()
+    assert "Missing API credentials" in captured.out
+
+
+def test_cli_successful_get(capsys):
+    mock_response = BlestaResponse('{"response": {"clients": []}}', 200)
+    with patch.dict(os.environ, {
+        "BLESTA_API_URL": "https://example.com/api",
+        "BLESTA_API_USER": "user",
+        "BLESTA_API_KEY": "key",
+    }, clear=False), \
+         patch("sys.argv", ["blesta", "--model", "clients", "--method", "getList"]), \
+         patch("blesta_sdk.cli.blesta_cli.BlestaRequest") as MockApi:
+        MockApi.return_value.submit.return_value = mock_response
+        cli()
+    captured = capsys.readouterr()
+    output = json.loads(captured.out)
+    assert output == {"clients": []}
+
+
+def test_cli_error_response(capsys):
+    mock_response = BlestaResponse('{"errors": {"message": "Not found"}}', 404)
+    with patch.dict(os.environ, {
+        "BLESTA_API_URL": "https://example.com/api",
+        "BLESTA_API_USER": "user",
+        "BLESTA_API_KEY": "key",
+    }, clear=False), \
+         patch("sys.argv", ["blesta", "--model", "clients", "--method", "get", "--params", "client_id=999"]), \
+         patch("blesta_sdk.cli.blesta_cli.BlestaRequest") as MockApi:
+        MockApi.return_value.submit.return_value = mock_response
+        cli()
+    captured = capsys.readouterr()
+    assert "Error:" in captured.out
+
+
+def test_cli_with_params_and_action(capsys):
+    mock_response = BlestaResponse('{"response": {"created": true}}', 200)
+    with patch.dict(os.environ, {
+        "BLESTA_API_URL": "https://example.com/api",
+        "BLESTA_API_USER": "user",
+        "BLESTA_API_KEY": "key",
+    }, clear=False), \
+         patch("sys.argv", ["blesta", "--model", "clients", "--method", "create",
+                            "--action", "POST", "--params", "name=John", "status=active"]), \
+         patch("blesta_sdk.cli.blesta_cli.BlestaRequest") as MockApi:
+        MockApi.return_value.submit.return_value = mock_response
+        cli()
+
+    MockApi.return_value.submit.assert_called_once_with(
+        "clients", "create", {"name": "John", "status": "active"}, "POST"
+    )
+
+
+def test_cli_last_request_flag(capsys):
+    mock_response = BlestaResponse('{"response": {"id": 1}}', 200)
+    with patch.dict(os.environ, {
+        "BLESTA_API_URL": "https://example.com/api",
+        "BLESTA_API_USER": "user",
+        "BLESTA_API_KEY": "key",
+    }, clear=False), \
+         patch("sys.argv", ["blesta", "--model", "clients", "--method", "get",
+                            "--params", "client_id=1", "--last-request"]), \
+         patch("blesta_sdk.cli.blesta_cli.BlestaRequest") as MockApi:
+        MockApi.return_value.submit.return_value = mock_response
+        MockApi.return_value.get_last_request.return_value = {
+            "url": "https://example.com/api/clients/get.json",
+            "args": {"client_id": "1"},
+        }
+        cli()
+    captured = capsys.readouterr()
+    assert "Last Request URL:" in captured.out
+    assert "Last Request Parameters:" in captured.out
+
+
+def test_cli_last_request_flag_no_previous(capsys):
+    mock_response = BlestaResponse('{"response": {"id": 1}}', 200)
+    with patch.dict(os.environ, {
+        "BLESTA_API_URL": "https://example.com/api",
+        "BLESTA_API_USER": "user",
+        "BLESTA_API_KEY": "key",
+    }, clear=False), \
+         patch("sys.argv", ["blesta", "--model", "clients", "--method", "get", "--last-request"]), \
+         patch("blesta_sdk.cli.blesta_cli.BlestaRequest") as MockApi:
+        MockApi.return_value.submit.return_value = mock_response
+        MockApi.return_value.get_last_request.return_value = None
+        cli()
+    captured = capsys.readouterr()
+    assert "No previous API request made." in captured.out
+
 
 def test_credentials(blesta_request):
     # This test will make an actual API request to verify the credentials

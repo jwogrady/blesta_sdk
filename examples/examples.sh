@@ -3,7 +3,7 @@
 # Ensure the script is executable
 # chmod +x run_blesta_commands.sh
 
-# Function to run a blesta-cli command and display the last request
+# Function to run a blesta command and display the last request
 run_blesta_command() {
     echo "Running: $1"
     eval "$1"
@@ -27,13 +27,13 @@ confirm_continue() {
     done
 }
 
-# List of blesta-cli commands to execute
+# List of blesta commands to execute
 commands=(
-    "blesta-cli --model clients --method getList --params status=active --last-request"
-    "blesta-cli --model clients --method get --params client_id=1 --last-request"
-    "blesta-cli --model services --method getList --params status=active --last-request"
-    "blesta-cli --model services --method getListCount --params client_id=1 status=active"
-    "blesta-cli --model services --method getAllByClient --params client_id=1 status=active --last-request"
+    "blesta --model clients --method getList --params status=active --last-request"
+    "blesta --model clients --method get --params client_id=1 --last-request"
+    "blesta --model services --method getList --params status=active --last-request"
+    "blesta --model services --method getListCount --params client_id=1 status=active"
+    "blesta --model services --method getAllByClient --params client_id=1 status=active --last-request"
 )
 
 # Iterate over commands and execute them
