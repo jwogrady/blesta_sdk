@@ -20,9 +20,11 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
-    "python-dotenv>=1.0.1",
-    "requests>=2.32.3",
+    "requests>=2.20",
 ]
+
+[project.optional-dependencies]
+cli = ["python-dotenv>=0.19"]
 
 [project.scripts]
 blesta = "blesta_sdk._cli:cli"
@@ -52,6 +54,7 @@ exclude = [
 dev = [
     "black>=25.1.0",
     "pandas>=1.3",
+    "python-dotenv>=0.19",
     "pytest>=8.3.4",
     "pytest-cov>=6.0.0",
     "ruff>=0.9.9",

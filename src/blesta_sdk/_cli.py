@@ -10,8 +10,6 @@ import json
 import os
 import sys
 
-from dotenv import load_dotenv
-
 from blesta_sdk._client import BlestaRequest
 
 
@@ -21,7 +19,12 @@ def cli():
     Reads credentials from ``BLESTA_API_URL``, ``BLESTA_API_USER``,
     and ``BLESTA_API_KEY`` environment variables (or ``.env`` via dotenv).
     """
-    load_dotenv()
+    try:
+        from dotenv import load_dotenv
+
+        load_dotenv()
+    except ImportError:
+        pass
 
     parser = argparse.ArgumentParser(description="Blesta API Command Line Interface")
     parser.add_argument(
