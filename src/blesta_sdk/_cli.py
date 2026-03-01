@@ -76,7 +76,6 @@ def cli():
         print(json.dumps(response.data, indent=4))
     else:
         print(json.dumps(response.errors(), indent=4))
-        sys.exit(1)
 
     if args.last_request:
         last_request = api.get_last_request()
@@ -85,6 +84,9 @@ def cli():
             print("Last Request Parameters:", last_request["args"])
         else:
             print("No previous API request made.")
+
+    if response.status_code != 200:
+        sys.exit(1)
 
 
 if __name__ == "__main__":

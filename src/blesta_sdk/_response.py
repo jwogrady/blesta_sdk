@@ -15,6 +15,9 @@ if TYPE_CHECKING:
     import pandas
 
 
+_UNSET = object()
+
+
 class BlestaResponse:
     """Parsed response from the Blesta API.
 
@@ -29,6 +32,15 @@ class BlestaResponse:
         self._raw = response
         self._status_code = status_code
         self._parsed: dict[str, Any] | None = None
+        self._json_valid: bool | None = None
+        self._csv_cache: list[dict[str, str]] | None | object = _UNSET
+
+    def __repr__(self) -> str:
+        if self._raw and len(self._raw) > 80:
+            body = self._raw[:80] + "..."
+        else:
+            body = self._raw
+        return f"BlestaResponse(status_code={self._status_code}, body={body!r})"
 
     @property
     def data(self) -> Any | None:
@@ -45,18 +57,16 @@ class BlestaResponse:
         return self._status_code
 
     @property
-    def raw(self) -> str:
+    def raw(self) -> str | None:
         """Raw response body text."""
         return self._raw
 
     @property
     def is_json(self) -> bool:
         """Returns True if the raw response is valid JSON."""
-        try:
-            json.loads(self._raw)
-            return True
-        except (json.JSONDecodeError, TypeError):
-            return False
+        if self._json_valid is None:
+            self._format_response()
+        return bool(self._json_valid)
 
     @property
     def is_csv(self) -> bool:
@@ -74,13 +84,19 @@ class BlestaResponse:
     def csv_data(self) -> list[dict[str, str]] | None:
         """Parse the raw response as CSV.
 
+        Results are cached after the first access to avoid re-parsing.
+
         :return: List of dicts (one per row, keyed by header column),
             or ``None`` if :attr:`is_csv` is ``False``.
         """
+        if self._csv_cache is not _UNSET:
+            return self._csv_cache  # type: ignore[return-value]
         if not self.is_csv:
+            self._csv_cache = None
             return None
         reader = csv.DictReader(io.StringIO(self._raw))
-        return list(reader)
+        self._csv_cache = list(reader)
+        return self._csv_cache
 
     def to_dataframe(self) -> pandas.DataFrame:
         """Convert the response to a :class:`pandas.DataFrame`.
@@ -134,7 +150,9 @@ class BlestaResponse:
             return None
         formatted = self._format_response()
         if self._status_code != 200:
-            return formatted.get("errors", {"error": "Invalid JSON response"})
+            return formatted.get(
+                "errors", {"error": f"HTTP {self._status_code} with no error details"}
+            )
         if "error" in formatted:
             return {"error": formatted["error"]}
         return None
@@ -144,6 +162,8 @@ class BlestaResponse:
         if self._parsed is None:
             try:
                 self._parsed = json.loads(self._raw)
+                self._json_valid = True
             except (json.JSONDecodeError, TypeError):
                 self._parsed = {"error": "Invalid JSON response"}
+                self._json_valid = False
         return self._parsed

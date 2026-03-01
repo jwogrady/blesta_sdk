@@ -1,6 +1,6 @@
 # Blesta Python SDK
 
-Python SDK and CLI for the [Blesta](https://www.blesta.com/) billing platform REST API.
+Python SDK and CLI for the [Blesta](https://www.blesta.com/) billing platform REST API. Provides standardized, reliable methods to extract, query, and sync data from live Blesta instances — designed for developers building integrations, data pipelines, and AI-powered solutions.
 
 ## Installation
 
@@ -22,6 +22,12 @@ For CLI `.env` file support:
 
 ```bash
 pip install blesta_sdk[cli]
+```
+
+For async support:
+
+```bash
+pip install blesta_sdk[async]
 ```
 
 ## Quickstart
@@ -85,6 +91,33 @@ for client in api.iter_all("clients", "getList", {"status": "active"}):
     print(client["id"])
 ```
 
+### Record Counts
+
+```python
+# Uses model/getListCount by default
+total = api.count("clients")
+
+# Custom count method
+active = api.count("clients", "getStatusCount", {"status": "active"})
+```
+
+Returns `0` on errors or non-numeric responses.
+
+### Batch Extraction
+
+Pull multiple models in a single call for ETL workflows:
+
+```python
+data = api.extract([
+    ("clients", "getList", {"status": "active"}),
+    ("invoices", "getList"),
+    ("packages", "getAll"),
+])
+
+for client in data["clients.getList"]:
+    print(client["id"])
+```
+
 ### Reports
 
 Blesta reports return CSV data. The SDK handles the `vars[]` parameter format automatically.
@@ -125,6 +158,16 @@ response = api.get("clients", "getList", {"status": "active"})
 df = response.to_dataframe()
 ```
 
+### Connection Pool Tuning
+
+For high-throughput workloads (pagination, batch extraction), tune the connection pool:
+
+```python
+api = BlestaRequest(url, user, key, pool_connections=20, pool_maxsize=20)
+```
+
+Defaults are `10`/`10` (up from requests' default of `1`/`1`).
+
 ### Context Manager
 
 ```python
@@ -151,6 +194,46 @@ response = api.get("clients", "getList")
 if response.status_code == 0:
     print("Network error:", response.raw)
 ```
+
+### Retry
+
+For production pipelines, enable automatic retry with exponential backoff:
+
+```python
+api = BlestaRequest(url, user, key, max_retries=3)
+
+# Retries on network errors and 5xx responses (1s, 2s, 4s delays)
+# Does NOT retry on 4xx client errors
+response = api.get("clients", "getList")
+```
+
+## Async Client
+
+Install with `pip install blesta_sdk[async]` (requires `httpx`).
+
+`AsyncBlestaRequest` mirrors the full sync API with `async`/`await`:
+
+```python
+from blesta_sdk import AsyncBlestaRequest
+
+async with AsyncBlestaRequest(url, user, key) as api:
+    # All sync methods available as async
+    response = await api.get("clients", "getList")
+    all_clients = await api.get_all("clients", "getList")
+    total = await api.count("clients")
+
+    # Async generator for pagination
+    async for client in api.iter_all("clients", "getList"):
+        print(client["id"])
+
+    # Concurrent batch extraction via asyncio.gather()
+    data = await api.extract([
+        ("clients", "getList"),
+        ("invoices", "getList"),
+    ])
+```
+
+Constructor accepts `max_connections` and `max_keepalive_connections` (default `10`/`10`) instead of the sync `pool_connections`/`pool_maxsize`.
 
 ## CLI
 
@@ -190,7 +273,7 @@ Output is JSON to stdout. On errors, the error dict is printed as JSON and the p
 
 ## API Reference
 
-### `BlestaRequest(url, user, key, timeout=30)`
+### `BlestaRequest(url, user, key, timeout=30, max_retries=0, pool_connections=10, pool_maxsize=10)`
 
 | Method | Description |
 |---|---|
@@ -198,8 +281,10 @@ Output is JSON to stdout. On errors, the error dict is printed as JSON and the p
 | `post(model, method, args=None)` | POST request (JSON body) |
 | `put(model, method, args=None)` | PUT request (JSON body) |
 | `delete(model, method, args=None)` | DELETE request (JSON body) |
+| `count(model, method="getListCount", args=None)` | Fetch record count as `int` (`0` on error) |
 | `iter_all(model, method, args=None, start_page=1)` | Paginate and yield individual results |
 | `get_all(model, method, args=None, start_page=1)` | Paginate and return all results as a list |
+| `extract(targets)` | Batch-fetch multiple paginated endpoints |
 | `get_report(report_type, start_date, end_date, extra_vars=None)` | Fetch a Blesta report (CSV) |
 | `get_report_series(report_type, start_month, end_month, extra_vars=None)` | Monthly reports as flat row list |
 | `get_report_series_pages(report_type, start_month, end_month, extra_vars=None)` | Monthly reports as generator |
@@ -208,13 +293,17 @@ Output is JSON to stdout. On errors, the error dict is printed as JSON and the p
 
 Supports context manager (`with BlestaRequest(...) as api:`).
 
+### `AsyncBlestaRequest(url, user, key, timeout=30, max_retries=0, max_connections=10, max_keepalive_connections=10)`
+
+Same methods as `BlestaRequest`, all `async`. `extract()` runs targets concurrently via `asyncio.gather()`. `iter_all()` is an async generator (`async for`). Supports `async with` context manager.
+
 ### `BlestaResponse`
 
 | Property / Method | Type | Description |
 |---|---|---|
 | `status_code` | `int` | HTTP status code; `0` = network error |
 | `data` | `Any \| None` | Parsed `"response"` field from JSON body |
-| `raw` | `str` | Raw response body text |
+| `raw` | `str \| None` | Raw response body text |
 | `errors()` | `dict \| None` | Error dict if present, otherwise `None` |
 | `is_json` | `bool` | `True` if response is valid JSON |
 | `is_csv` | `bool` | `True` if response is CSV data |
@@ -237,4 +326,4 @@ Supports context manager (`with BlestaRequest(...) as api:`).
 
 ## License
 
-[MIT](https://github.com/jwogrady/blesta_sdk/blob/main/LICENSE)
+[MIT](https://github.com/jwogrady/blesta_sdk/blob/master/LICENSE)
