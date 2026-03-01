@@ -18,6 +18,12 @@ Using pip:
 pip install blesta_sdk
 ```
 
+For CLI `.env` file support:
+
+```bash
+pip install blesta_sdk[cli]
+```
+
 ## Quickstart
 
 ```python
@@ -148,7 +154,7 @@ if response.status_code == 0:
 
 ## CLI
 
-The `blesta` command reads credentials from environment variables or a `.env` file in the current directory:
+The `blesta` command reads credentials from environment variables. With the `cli` extra installed (`pip install blesta_sdk[cli]`), it also loads a `.env` file in the current directory:
 
 ```env
 BLESTA_API_URL=https://your-blesta-domain.com/api
@@ -194,9 +200,9 @@ Output is JSON to stdout. On errors, the error dict is printed as JSON and the p
 | `delete(model, method, args=None)` | DELETE request (JSON body) |
 | `iter_all(model, method, args=None, start_page=1)` | Paginate and yield individual results |
 | `get_all(model, method, args=None, start_page=1)` | Paginate and return all results as a list |
-| `get_report(type, start, end, extra_vars=None)` | Fetch a Blesta report (CSV) |
-| `get_report_series(type, start_month, end_month, extra_vars=None)` | Monthly reports as flat row list |
-| `get_report_series_pages(type, start_month, end_month, extra_vars=None)` | Monthly reports as generator |
+| `get_report(report_type, start_date, end_date, extra_vars=None)` | Fetch a Blesta report (CSV) |
+| `get_report_series(report_type, start_month, end_month, extra_vars=None)` | Monthly reports as flat row list |
+| `get_report_series_pages(report_type, start_month, end_month, extra_vars=None)` | Monthly reports as generator |
 | `get_last_request()` | Last request URL and args, or `None` |
 | `close()` | Close the HTTP session |
 

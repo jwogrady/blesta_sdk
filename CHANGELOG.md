@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** Renamed `get_all_pages()` to `iter_all()`.
 - **Breaking:** Network errors now return `status_code=0` instead of `500`.
 - **Breaking:** Removed deprecated `response_code` property (use `status_code`).
+- **Breaking:** `python-dotenv` moved from runtime dependency to optional `[cli]` extra. Install with `pip install blesta_sdk[cli]` for `.env` file support. The CLI works without it (reads environment variables directly).
+- Loosened dependency lower bounds: `requests>=2.20` (was `>=2.32.3`), `python-dotenv>=0.19` (was `>=1.0.1`).
 - CLI error output is now JSON (was Python repr).
 - CLI missing-credentials message updated and now outputs JSON.
 - `submit()` action parameter uses `Literal["GET", "POST", "PUT", "DELETE"]` typing.
