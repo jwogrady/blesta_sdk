@@ -5,6 +5,59 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [0.2.0] - 2026-03-01
+
+### Breaking Changes
+- **Flattened package structure** — removed `api/`, `core/`, and `cli/` subpackages. Import directly: `from blesta_sdk import BlestaRequest, BlestaResponse`.
+- Renamed `response.response` property to `response.data`.
+- Renamed `get_all_pages()` to `iter_all()`.
+- Network errors now return `status_code=0` instead of `500`.
+- Removed deprecated `response_code` property (use `status_code`).
+- `python-dotenv` moved from runtime dependency to optional `[cli]` extra. Install with `pip install blesta_sdk[cli]` for `.env` file support.
+
+### Added
+- CSV response detection: `BlestaResponse.is_json`, `is_csv`, and `csv_data` properties.
+- Pagination: `BlestaRequest.iter_all()` generator and `get_all()` list helper.
+- Report helper: `BlestaRequest.get_report()` with automatic `vars[]` parameter formatting.
+- Time-series reports: `get_report_series()` and `get_report_series_pages()` for monthly date ranges.
+- Optional pandas integration: `BlestaResponse.to_dataframe()` for CSV and JSON responses.
+- `py.typed` marker for PEP 561 type-checking support.
+- PyPI classifiers, project URLs, and `[tool.black]`/`[tool.ruff]` configuration.
+- Hatch sdist excludes to keep CI, tests, and lockfiles out of distributions.
+- CI test workflow (`.github/workflows/test.yml`) with Python 3.9/3.12/3.13 matrix.
+
+### Fixed
+- HTTP status codes now pass through correctly (401/403/404 were previously reported as 500).
+- CSV responses no longer trigger false "Invalid JSON response" errors.
+- `_format_response()` handles `None` body without raising `TypeError`.
+- CLI now returns exit code 1 on missing credentials and API errors.
+- Moved `load_dotenv()` inside `cli()` to prevent side effects on import.
+- Removed `black` from runtime dependencies.
+- CLI error output is now valid JSON (was Python repr).
+
+### Changed
+- Internal modules renamed to `_client.py`, `_response.py`, `_dateutil.py`, `_cli.py`.
+- `submit()` action parameter uses `Literal["GET", "POST", "PUT", "DELETE"]` typing.
+- `__all__` includes `__version__`.
+- Upgraded publish workflow to `actions/checkout@v4` and `actions/setup-python@v5`.
+- Pinned all dependencies to latest compatible versions.
+- README fully rewritten with complete API reference, usage examples, and CLI documentation.
+
+### Removed
+- `examples/` directory (covered in README).
+- `api/`, `core/`, `cli/` subpackage `__init__.py` files.
+- `tests/__init__.py`.
+
+### Migration from 0.1.x
+- `from blesta_sdk.api import BlestaRequest` → `from blesta_sdk import BlestaRequest`
+- `from blesta_sdk.core import BlestaResponse` → `from blesta_sdk import BlestaResponse`
+- `response.response` → `response.data`
+- `response.response_code` → `response.status_code`
+- `get_all_pages()` → `iter_all()`
+- `pip install blesta_sdk` → `pip install blesta_sdk[cli]` (if using `.env` files)
+
 ## [0.1.7] - 2026-02-28
 
 ### Fixed
@@ -46,35 +99,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.1.4] - 2025-01-20
 
-### Added
-- New features and improvements.
-
-### Fixed
-- Bug fixes and performance improvements.
+- Packaging and dependency fixes.
 
 ## [0.1.3] - 2025-01-20 [YANKED]
 
-### Added
-- New features and improvements.
-
-### Fixed
-- Bug fixes and performance improvements.
-
 ## [0.1.2] - 2025-01-20 [YANKED]
 
-### Added
-- New features and improvements.
-
-### Fixed
-- Bug fixes and performance improvements.
-
 ## [0.1.1] - 2025-01-19 [YANKED]
-
-### Added
-- New features and improvements.
-
-### Fixed
-- Bug fixes and performance improvements.
 
 ## [0.1.0] - 2025-01-19
 
