@@ -2,11 +2,15 @@ import os
 from unittest.mock import patch
 
 import pytest
-from dotenv import load_dotenv
 
 from blesta_sdk import BlestaRequest
 
-load_dotenv()
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv()
+except ImportError:
+    pass
 
 
 @pytest.fixture

@@ -1,20 +1,20 @@
-"""Internal HTTP client implementation.
+"""Internal async HTTP client implementation.
 
 This module is not part of the public API. Import
-:class:`~blesta_sdk.BlestaRequest` from ``blesta_sdk`` directly.
+:class:`~blesta_sdk.AsyncBlestaRequest` from ``blesta_sdk`` directly.
+
+Requires ``httpx``: ``pip install blesta_sdk[async]``
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
-import time
-from collections.abc import Iterator
+from collections.abc import AsyncIterator
 from typing import Any, Literal
 from urllib.parse import urljoin
 
-import requests
-from requests.adapters import HTTPAdapter
-from requests.auth import HTTPBasicAuth
+import httpx
 
 from blesta_sdk._dateutil import _month_boundaries
 from blesta_sdk._response import BlestaResponse
@@ -24,28 +24,30 @@ logger = logging.getLogger(__name__)
 DEFAULT_TIMEOUT = 30
 
 
-class BlestaRequest:
-    """HTTP client for the Blesta REST API.
+class AsyncBlestaRequest:
+    """Async HTTP client for the Blesta REST API.
 
-    Wraps :class:`requests.Session` with Basic Auth and provides
-    convenience methods for GET/POST/PUT/DELETE, automatic pagination,
-    and report fetching.
+    Wraps :class:`httpx.AsyncClient` with Basic Auth and provides
+    async convenience methods for GET/POST/PUT/DELETE, automatic
+    pagination, and report fetching.
 
-    Can be used as a context manager::
+    Can be used as an async context manager::
 
-        with BlestaRequest(url, user, key) as api:
-            response = api.get("clients", "getList")
+        async with AsyncBlestaRequest(url, user, key) as api:
+            response = await api.get("clients", "getList")
 
     :param url: Base URL of the Blesta API (e.g., ``"https://example.com/api"``).
     :param user: API username.
     :param key: API key.
-    :param timeout: Request timeout in seconds.
+    :param timeout: Request timeout in seconds. Applied at client
+        initialization and cannot be changed afterward (unlike the sync
+        client, where timeout is passed per-request).
     :param max_retries: Number of retries on network errors or 5xx responses.
         Uses exponential backoff (1s, 2s, 4s, …). Defaults to ``0`` (no retries).
-    :param pool_connections: Number of connection pools to cache.
+    :param max_connections: Maximum number of connections in the pool.
         Defaults to ``10``.
-    :param pool_maxsize: Maximum number of connections per pool.
-        Defaults to ``10``.
+    :param max_keepalive_connections: Maximum number of idle keep-alive
+        connections. Defaults to ``10``.
     :param auth_method: Authentication method. ``"basic"`` uses HTTP Basic
         Auth. ``"header"`` sends credentials via ``BLESTA-API-USER`` and
         ``BLESTA-API-KEY`` headers (recommended by Blesta, requires no
@@ -59,8 +61,8 @@ class BlestaRequest:
         key: str,
         timeout: int | float = DEFAULT_TIMEOUT,
         max_retries: int = 0,
-        pool_connections: int = 10,
-        pool_maxsize: int = 10,
+        max_connections: int = 10,
+        max_keepalive_connections: int = 10,
         auth_method: Literal["basic", "header"] = "basic",
     ):
         self.base_url = url.rstrip("/") + "/"
@@ -70,88 +72,92 @@ class BlestaRequest:
         self.max_retries = max_retries
         self.auth_method = auth_method
         self._last_request: dict[str, Any] | None = None
-        self.session = requests.Session()
+        auth = None if auth_method == "header" else httpx.BasicAuth(self.user, self.key)
+        headers = {}
         if auth_method == "header":
-            self.session.headers["BLESTA-API-USER"] = self.user
-            self.session.headers["BLESTA-API-KEY"] = self.key
-        else:
-            self.session.auth = HTTPBasicAuth(self.user, self.key)
-        adapter = HTTPAdapter(
-            pool_connections=pool_connections,
-            pool_maxsize=pool_maxsize,
+            headers = {
+                "BLESTA-API-USER": self.user,
+                "BLESTA-API-KEY": self.key,
+            }
+        self.client = httpx.AsyncClient(
+            auth=auth,
+            headers=headers,
+            timeout=httpx.Timeout(timeout),
+            limits=httpx.Limits(
+                max_connections=max_connections,
+                max_keepalive_connections=max_keepalive_connections,
+            ),
         )
-        self.session.mount("https://", adapter)
-        self.session.mount("http://", adapter)
 
-    def __enter__(self) -> BlestaRequest:
+    async def __aenter__(self) -> AsyncBlestaRequest:
         return self
 
-    def __exit__(self, *args: Any) -> None:
-        self.session.close()
+    async def __aexit__(self, *args: Any) -> None:
+        await self.client.aclose()
 
     def __repr__(self) -> str:
-        return f"BlestaRequest(url={self.base_url!r}, user={self.user!r})"
+        return f"AsyncBlestaRequest(url={self.base_url!r}, user={self.user!r})"
 
-    def close(self) -> None:
-        """Close the underlying HTTP session."""
-        self.session.close()
+    async def close(self) -> None:
+        """Close the underlying HTTP client."""
+        await self.client.aclose()
 
-    def get(
+    async def get(
         self, model: str, method: str, args: dict[str, Any] | None = None
     ) -> BlestaResponse:
-        """Send a GET request. Parameters are passed as query strings.
+        """Send an async GET request. Parameters are passed as query strings.
 
         :param model: API model (e.g., ``"clients"``).
         :param method: API method (e.g., ``"getList"``).
         :param args: Query parameters.
         :return: Parsed API response.
         """
-        return self.submit(model, method, args, "GET")
+        return await self.submit(model, method, args, "GET")
 
-    def post(
+    async def post(
         self, model: str, method: str, args: dict[str, Any] | None = None
     ) -> BlestaResponse:
-        """Send a POST request. Parameters are sent as a JSON body.
+        """Send an async POST request. Parameters are sent as a JSON body.
 
         :param model: API model (e.g., ``"clients"``).
         :param method: API method (e.g., ``"create"``).
         :param args: JSON body data.
         :return: Parsed API response.
         """
-        return self.submit(model, method, args, "POST")
+        return await self.submit(model, method, args, "POST")
 
-    def put(
+    async def put(
         self, model: str, method: str, args: dict[str, Any] | None = None
     ) -> BlestaResponse:
-        """Send a PUT request. Parameters are sent as a JSON body.
+        """Send an async PUT request. Parameters are sent as a JSON body.
 
         :param model: API model (e.g., ``"clients"``).
         :param method: API method (e.g., ``"edit"``).
         :param args: JSON body data.
         :return: Parsed API response.
         """
-        return self.submit(model, method, args, "PUT")
+        return await self.submit(model, method, args, "PUT")
 
-    def delete(
+    async def delete(
         self, model: str, method: str, args: dict[str, Any] | None = None
     ) -> BlestaResponse:
-        """Send a DELETE request. Parameters are sent as a JSON body.
+        """Send an async DELETE request. Parameters are sent as a JSON body.
 
         :param model: API model (e.g., ``"clients"``).
         :param method: API method (e.g., ``"delete"``).
         :param args: JSON body data.
         :return: Parsed API response.
         """
-        return self.submit(model, method, args, "DELETE")
+        return await self.submit(model, method, args, "DELETE")
 
-    def submit(
+    async def submit(
         self,
         model: str,
         method: str,
         args: dict[str, Any] | None = None,
         action: Literal["GET", "POST", "PUT", "DELETE"] = "POST",
     ) -> BlestaResponse:
-        """Send an HTTP request to the Blesta API.
+        """Send an async HTTP request to the Blesta API.
 
         Prefer :meth:`get`, :meth:`post`, :meth:`put`, or :meth:`delete`
         over calling this method directly.
@@ -178,13 +184,13 @@ class BlestaRequest:
         for attempt in range(self.max_retries + 1):
             try:
                 if action == "GET":
-                    response = self.session.get(url, params=args, timeout=self.timeout)
+                    response = await self.client.get(url, params=args)
                 elif action == "POST":
-                    response = self.session.post(url, json=args, timeout=self.timeout)
+                    response = await self.client.post(url, json=args)
                 elif action == "PUT":
-                    response = self.session.put(url, json=args, timeout=self.timeout)
+                    response = await self.client.put(url, json=args)
                 elif action == "DELETE":
-                    response = self.session.delete(url, json=args, timeout=self.timeout)
+                    response = await self.client.delete(url, json=args)
                 else:
                     raise ValueError("Invalid HTTP action specified.")
 
@@ -201,7 +207,7 @@ class BlestaRequest:
                     url,
                 )
 
-            except requests.RequestException as e:
+            except httpx.HTTPError as e:
                 logger.error("Request failed: %s", e)
                 last_response = BlestaResponse(str(e), 0)
 
@@ -210,19 +216,19 @@ class BlestaRequest:
 
                 logger.warning("Retry %d/%d: %s", attempt + 1, self.max_retries, e)
 
-            time.sleep(2**attempt)
+            await asyncio.sleep(2**attempt)
 
         if last_response is None:  # pragma: no cover
             raise RuntimeError("Retry loop exited without a response")
         return last_response
 
-    def iter_all(
+    async def iter_all(
         self,
         model: str,
         method: str,
         args: dict[str, Any] | None = None,
         start_page: int = 1,
-    ) -> Iterator[Any]:
+    ) -> AsyncIterator[Any]:
         """Yield individual items across all pages.
 
         Calls the API with ``page=1``, ``page=2``, etc. until an empty
@@ -232,7 +238,7 @@ class BlestaRequest:
         :param method: API method (e.g., ``"getList"``).
         :param args: Query parameters (``page`` is managed automatically).
         :param start_page: Page number to start from.
-        :return: Iterator of individual result items.
+        :return: Async iterator of individual result items.
         """
         if args is None:
             args = {}
@@ -240,7 +246,7 @@ class BlestaRequest:
         page = start_page
         while True:
             page_args = {**args, "page": page}
-            response = self.get(model, method, page_args)
+            response = await self.get(model, method, page_args)
 
             if response.status_code != 200:
                 logger.warning(
@@ -255,14 +261,15 @@ class BlestaRequest:
                 return
 
             if isinstance(data, list):
-                yield from data
+                for item in data:
+                    yield item
             else:
                 yield data
                 return
 
             page += 1
 
-    def get_all(
+    async def get_all(
         self,
         model: str,
         method: str,
@@ -279,9 +286,89 @@ class BlestaRequest:
         :param start_page: Page number to start from.
         :return: List of all result items across all pages.
         """
-        return list(self.iter_all(model, method, args, start_page))
+        results: list[Any] = []
+        async for item in self.iter_all(model, method, args, start_page):
+            results.append(item)
+        return results
 
-    def count(
+    async def get_all_fast(
+        self,
+        model: str,
+        method: str,
+        count_method: str = "getListCount",
+        args: dict[str, Any] | None = None,
+        page_size: int = 25,
+        batch_size: int = 10,
+    ) -> list[Any]:
+        """Fetch all pages in parallel batches using a count-first strategy.
+
+        Calls :meth:`count` to determine total records, then fetches
+        pages concurrently in batches of *batch_size* via
+        :func:`asyncio.gather`. Falls back to :meth:`get_all` if the
+        count call returns ``0`` or fails.
+
+        :param model: API model (e.g., ``"transactions"``).
+        :param method: API method (e.g., ``"getList"``).
+        :param count_method: Count method name. Defaults to
+            ``"getListCount"``.
+        :param args: Query parameters (``page`` is managed automatically).
+        :param page_size: Expected items per page. Must match the API's
+            page size. Defaults to ``25``.
+        :param batch_size: Pages to fetch in parallel per batch.
+            Defaults to ``10``.
+        :return: List of all result items across all pages.
+        """
+        if args is None:
+            args = {}
+
+        total = await self.count(model, count_method, args)
+        if total <= 0:
+            logger.debug(
+                "get_all_fast: count returned %d for %s/%s, " "falling back to get_all",
+                total,
+                model,
+                method,
+            )
+            return await self.get_all(model, method, args)
+
+        total_pages = -(-total // page_size)  # ceil division
+        logger.debug(
+            "get_all_fast: %d records, %d pages for %s/%s",
+            total,
+            total_pages,
+            model,
+            method,
+        )
+
+        all_items: list[Any] = []
+
+        for batch_start in range(1, total_pages + 1, batch_size):
+            batch_end = min(batch_start + batch_size, total_pages + 1)
+
+            async def _fetch_page(page: int) -> list[Any]:
+                page_args = {**args, "page": page}
+                response = await self.get(model, method, page_args)
+                if response.status_code != 200:
+                    logger.warning(
+                        "get_all_fast: HTTP %d on page %d",
+                        response.status_code,
+                        page,
+                    )
+                    return []
+                data = response.data
+                if not data:
+                    return []
+                return data if isinstance(data, list) else [data]
+
+            pages_data = await asyncio.gather(
+                *[_fetch_page(p) for p in range(batch_start, batch_end)]
+            )
+            for page_items in pages_data:
+                all_items.extend(page_items)
+
+        return all_items
+
+    async def count(
         self,
         model: str,
         method: str = "getListCount",
@@ -298,7 +385,7 @@ class BlestaRequest:
         :param args: Query parameters.
         :return: Record count, or ``0`` on errors.
         """
-        response = self.get(model, method, args)
+        response = await self.get(model, method, args)
         if response.status_code != 200:
             logger.warning(
                 "count() got HTTP %d for %s/%s", response.status_code, model, method
@@ -319,31 +406,36 @@ class BlestaRequest:
             )
             return 0
 
-    def extract(
+    async def extract(
         self,
         targets: list[tuple[str, str] | tuple[str, str, dict[str, Any]]],
     ) -> dict[str, list[Any]]:
-        """Fetch multiple paginated endpoints and return results keyed by model.
+        """Fetch multiple paginated endpoints concurrently.
 
-        Convenience method for ETL workflows that pull several models at once.
+        Uses :func:`asyncio.gather` to run all targets in parallel.
         Each target is a tuple of ``(model, method)`` or
         ``(model, method, args)``.
 
         :param targets: List of extraction targets.
         :return: Dict mapping ``"model.method"`` to list of results.
         """
-        results: dict[str, list[Any]] = {}
-        for target in targets:
+
+        async def _fetch(
+            target: tuple[str, str] | tuple[str, str, dict[str, Any]],
+        ) -> tuple[str, list[Any]]:
             if len(target) == 3:
                 model, method, args = target  # type: ignore[misc]
             else:
                 model, method = target  # type: ignore[misc]
                 args = None
             key = f"{model}.{method}"
-            results[key] = self.get_all(model, method, args)
-        return results
+            data = await self.get_all(model, method, args)
+            return key, data
 
-    def get_report(
+        pairs = await asyncio.gather(*[_fetch(t) for t in targets])
+        return dict(pairs)
+
+    async def get_report(
         self,
         report_type: str,
         start_date: str,
@@ -373,15 +465,15 @@ class BlestaRequest:
                 param_key = key if key.startswith("vars[") else f"vars[{key}]"
                 args[param_key] = value
 
-        return self.get("report_manager", "fetchAll", args)
+        return await self.get("report_manager", "fetchAll", args)
 
-    def get_report_series_pages(
+    async def get_report_series_pages(
         self,
         report_type: str,
         start_month: str,
         end_month: str,
         extra_vars: dict[str, str] | None = None,
-    ) -> Iterator[tuple[str, BlestaResponse]]:
+    ) -> AsyncIterator[tuple[str, BlestaResponse]]:
         """Yield ``(period, response)`` for each month in a date range.
 
         Fetches one report per month via :meth:`get_report`. Yields
@@ -392,17 +484,19 @@ class BlestaRequest:
         :param start_month: Start month as ``"YYYY-MM"`` (inclusive).
         :param end_month: End month as ``"YYYY-MM"`` (inclusive).
         :param extra_vars: Additional ``vars[]`` parameters.
-        :return: Iterator of ``(period, BlestaResponse)`` tuples.
+        :return: Async iterator of ``(period, BlestaResponse)`` tuples.
         :raises ValueError: If *start_month* is after *end_month* or
             the format is invalid.
         """
         boundaries = _month_boundaries(start_month, end_month)
         for first_day, last_day, period in boundaries:
             logger.debug("Fetching report %r for %s", report_type, period)
-            response = self.get_report(report_type, first_day, last_day, extra_vars)
+            response = await self.get_report(
+                report_type, first_day, last_day, extra_vars
+            )
             yield (period, response)
 
-    def get_report_series(
+    async def get_report_series(
         self,
         report_type: str,
         start_month: str,
@@ -425,9 +519,82 @@ class BlestaRequest:
             the format is invalid.
         """
         rows: list[dict[str, str]] = []
-        for period, response in self.get_report_series_pages(
+        async for period, response in self.get_report_series_pages(
             report_type, start_month, end_month, extra_vars
         ):
+            if response.status_code != 200:
+                logger.warning(
+                    "Report %r for %s: HTTP %d, skipping",
+                    report_type,
+                    period,
+                    response.status_code,
+                )
+                continue
+            csv_rows = response.csv_data
+            if csv_rows is None:
+                logger.warning(
+                    "Report %r for %s: no CSV data in response, skipping",
+                    report_type,
+                    period,
+                )
+                continue
+            for row in csv_rows:
+                row["_period"] = period
+            rows.extend(csv_rows)
+        return rows
+
+    async def get_report_series_concurrent(
+        self,
+        report_type: str,
+        start_month: str,
+        end_month: str,
+        extra_vars: dict[str, str] | None = None,
+        max_concurrency: int | None = None,
+    ) -> list[dict[str, str]]:
+        """Fetch monthly reports concurrently and return all rows.
+
+        Unlike :meth:`get_report_series`, which fetches months
+        sequentially, this method uses :func:`asyncio.gather` to fetch
+        all months in parallel (or up to *max_concurrency* at a time
+        via a semaphore).
+
+        Each returned row dict has a ``"_period"`` key added with the
+        ``"YYYY-MM"`` value. Months that return errors or non-CSV
+        responses are skipped with a warning log.
+
+        :param report_type: Report type (e.g., ``"package_revenue"``).
+        :param start_month: Start month as ``"YYYY-MM"`` (inclusive).
+        :param end_month: End month as ``"YYYY-MM"`` (inclusive).
+        :param extra_vars: Additional ``vars[]`` parameters.
+        :param max_concurrency: Maximum concurrent requests. ``None``
+            means unlimited (all months in parallel).
+        :return: Flat list of row dicts from all months, ordered by period.
+        :raises ValueError: If *start_month* is after *end_month* or
+            the format is invalid.
+        """
+        boundaries = _month_boundaries(start_month, end_month)
+        sem = asyncio.Semaphore(max_concurrency) if max_concurrency else None
+
+        async def _fetch_month(
+            first_day: str, last_day: str, period: str
+        ) -> tuple[str, BlestaResponse]:
+            if sem:
+                async with sem:
+                    resp = await self.get_report(
+                        report_type, first_day, last_day, extra_vars
+                    )
+            else:
+                resp = await self.get_report(
+                    report_type, first_day, last_day, extra_vars
+                )
+            return (period, resp)
+
+        results = await asyncio.gather(
+            *[_fetch_month(fd, ld, p) for fd, ld, p in boundaries]
+        )
+
+        rows: list[dict[str, str]] = []
+        for period, response in results:
             if response.status_code != 200:
                 logger.warning(
                     "Report %r for %s: HTTP %d, skipping",

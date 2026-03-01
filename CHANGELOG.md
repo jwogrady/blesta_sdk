@@ -7,6 +7,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-03-01
+
+### Added
+- `auth_method` parameter on both `BlestaRequest` and `AsyncBlestaRequest`. Set `auth_method="header"` to use Blesta's recommended header-based authentication (`BLESTA-API-USER` / `BLESTA-API-KEY` headers) instead of HTTP Basic Auth. Defaults to `"basic"` for backward compatibility.
+- `get_report_series_concurrent()` on `AsyncBlestaRequest` — fetches all months in parallel via `asyncio.gather()`. Optional `max_concurrency` parameter for throttling. ~12x faster than sequential for 12-month ranges.
+- `get_all_fast()` on `AsyncBlestaRequest` — count-first batched parallel pagination. Calls `getListCount` first, then fetches pages concurrently in configurable `batch_size` batches. ~8x faster than sequential for 50-page datasets.
+- Concurrency benchmarks with simulated network latency (`benchmarks/test_bench_concurrency.py`). Measures real parallelism wins across report series, extraction, and pagination scenarios.
+
+## [0.2.3] - 2026-03-01
+
+### Fixed
+- `BlestaResponse.csv_data` now caches results after first access, avoiding repeated `csv.DictReader` parsing on subsequent property reads.
+
+### Changed
+- Clarified `AsyncBlestaRequest` timeout docstring: timeout is set at client initialization and cannot be changed per-request (unlike the sync client).
+
+## [0.2.2] - 2026-03-01
+
+### Added
+- `count()` convenience method on `BlestaRequest` for `getListCount`-style API calls. Returns a plain `int` with `0` fallback on errors.
+- Connection pool tuning via `pool_connections` and `pool_maxsize` parameters on `BlestaRequest`. Defaults to 10/10 (up from requests' default 1/1), improving throughput for sequential pagination workloads.
+- `AsyncBlestaRequest` async client powered by httpx. Install with `pip install blesta_sdk[async]`.
+- All sync client methods available as async: `get()`, `post()`, `put()`, `delete()`, `submit()`, `count()`, `iter_all()`, `get_all()`, `extract()`, and report methods.
+- `extract()` runs targets concurrently via `asyncio.gather()`.
+- `iter_all()` is an async generator (`async for item in api.iter_all(...):`).
+- Lazy import: `from blesta_sdk import AsyncBlestaRequest` only requires httpx when accessed.
+- `[async]` optional dependency group for httpx.
+
+### Fixed
+- CLI `--last-request` flag now works on error responses (was unreachable after `sys.exit(1)`).
+- `BlestaResponse.is_json` no longer re-parses JSON on every access (uses cached result).
+- `BlestaResponse.raw` property type corrected to `str | None`.
+- `BlestaResponse.errors()` returns clearer message for non-200 responses without an `errors` key.
+- Replaced f-string logging with `%`-style formatting (avoids string evaluation when log level is disabled).
+- Wrapped `conftest.py` dotenv import in `try/except` for robustness without dev deps.
+
+### Changed
+- CI enforces `--cov-fail-under=97` and `black --check`.
+- Added `testpaths = ["tests"]` to prevent benchmarks from being collected in CI.
+- Excluded `.claude/` and `benchmarks/` from sdist.
+- Added Python 3.10/3.11 classifiers to `pyproject.toml`.
+- Updated CLAUDE.md and README to reflect current project structure and full API surface.
+
+### Removed
+- Unreachable dead code in `iter_all()` (both sync and async clients).
+- Stale `dist/` build artifacts from repository.
+- Redundant `@pytest.mark.asyncio` decorators (covered by `asyncio_mode = "auto"`).
+
+## [0.2.1] - 2026-03-01
+
+### Added
+- `__repr__` on `BlestaRequest` and `BlestaResponse` for readable REPL/notebook output.
+- `max_retries` parameter on `BlestaRequest` — automatic retry with exponential backoff for network errors and 5xx responses.
+- `extract()` method for batch extraction of multiple paginated endpoints in one call.
+- README updated to position SDK as a data extraction/integration tool for Blesta instances.
+
 ## [0.2.0] - 2026-03-01
 
 ### Breaking Changes

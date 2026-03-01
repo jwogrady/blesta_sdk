@@ -5,6 +5,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 import requests
+from requests.adapters import HTTPAdapter
 
 import blesta_sdk
 from blesta_sdk import BlestaRequest, BlestaResponse
@@ -21,7 +22,12 @@ from blesta_sdk._dateutil import _month_boundaries
 
 def test_all_exports():
     """__all__ exposes exactly the public API surface."""
-    assert set(blesta_sdk.__all__) == {"BlestaRequest", "BlestaResponse", "__version__"}
+    assert set(blesta_sdk.__all__) == {
+        "BlestaRequest",
+        "BlestaResponse",
+        "AsyncBlestaRequest",
+        "__version__",
+    }
 
 
 def test_version():
@@ -130,6 +136,71 @@ def test_timeout_passed_to_requests():
     )
 
 
+# --- BlestaRequest: connection pool tuning ---
+
+
+def test_default_pool_settings():
+    """Default pool_connections and pool_maxsize are 10."""
+    api = BlestaRequest("https://example.com/api", "user", "key")
+    adapter = api.session.get_adapter("https://example.com")
+    assert adapter._pool_connections == 10
+    assert adapter._pool_maxsize == 10
+
+
+def test_custom_pool_settings():
+    """Custom pool_connections and pool_maxsize are respected."""
+    api = BlestaRequest(
+        "https://example.com/api",
+        "user",
+        "key",
+        pool_connections=5,
+        pool_maxsize=20,
+    )
+    adapter = api.session.get_adapter("https://example.com")
+    assert adapter._pool_connections == 5
+    assert adapter._pool_maxsize == 20
+
+
+def test_http_adapter_mounted():
+    """Both http:// and https:// have the custom adapter."""
+    api = BlestaRequest("https://example.com/api", "user", "key")
+    https_adapter = api.session.get_adapter("https://example.com")
+    http_adapter = api.session.get_adapter("http://example.com")
+    assert isinstance(https_adapter, HTTPAdapter)
+    assert isinstance(http_adapter, HTTPAdapter)
+
+
+# --- BlestaRequest: auth_method ---
+
+
+def test_header_auth_sets_headers():
+    """auth_method='header' sets custom headers, no BasicAuth."""
+    api = BlestaRequest(
+        "https://example.com/api", "myuser", "mykey", auth_method="header"
+    )
+    assert api.auth_method == "header"
+    assert api.session.auth is None
+    assert api.session.headers["BLESTA-API-USER"] == "myuser"
+    assert api.session.headers["BLESTA-API-KEY"] == "mykey"
+
+
+def test_header_auth_default_is_basic():
+    """Default auth_method is 'basic' (backward-compatible)."""
+    api = BlestaRequest("https://example.com/api", "user", "key")
+    assert api.auth_method == "basic"
+    assert api.session.auth is not None
+
+
+def test_header_auth_request_succeeds():
+    """Header auth sends requests successfully."""
+    api = BlestaRequest("https://example.com/api", "user", "key", auth_method="header")
+    with patch.object(api.session, "get") as mock_get:
+        mock_get.return_value = Mock(text='{"response": {}}', status_code=200)
+        response = api.get("clients", "getList")
+    assert response.status_code == 200
+    mock_get.assert_called_once()
+
+
 # --- BlestaRequest: context manager / close ---
 
 
@@ -210,7 +281,7 @@ def test_errors_invalid_json():
 def test_errors_fallback_non_200_without_errors_key():
     """Non-200 JSON body without 'errors' key returns fallback dict."""
     response = BlestaResponse('{"other": "data"}', 503)
-    assert response.errors() == {"error": "Invalid JSON response"}
+    assert response.errors() == {"error": "HTTP 503 with no error details"}
 
 
 # --- BlestaResponse: is_json / is_csv ---
@@ -253,6 +324,23 @@ def test_csv_data_parses_correctly():
 
 def test_csv_data_returns_none_for_json():
     response = BlestaResponse('{"response": {"id": 1}}', 200)
+    assert response.csv_data is None
+
+
+def test_csv_data_cached_after_first_access():
+    """Second csv_data access returns cached result, not a re-parse."""
+    csv_text = '"id","name"\n"1","John"\n"2","Jane"\n'
+    response = BlestaResponse(csv_text, 200)
+    first = response.csv_data
+    second = response.csv_data
+    assert first is second  # same object, not re-parsed
+
+
+def test_csv_data_caches_none_for_non_csv():
+    """csv_data caches None result for non-CSV responses."""
+    response = BlestaResponse('{"response": {"id": 1}}', 200)
+    assert response.csv_data is None
+    # Access again — should hit cache, not re-evaluate is_csv
     assert response.csv_data is None
 
 
@@ -947,6 +1035,264 @@ def test_cli_last_request_flag_no_previous(cli_env, capsys):
         cli()
     captured = capsys.readouterr()
     assert "No previous API request made." in captured.out
+
+
+def test_cli_last_request_on_error(cli_env, capsys):
+    """--last-request output is shown even on API errors."""
+    mock_response = BlestaResponse('{"errors": {"message": "Not found"}}', 404)
+    with (
+        patch(
+            "sys.argv",
+            [
+                "blesta",
+                "--model",
+                "clients",
+                "--method",
+                "get",
+                "--params",
+                "client_id=999",
+                "--last-request",
+            ],
+        ),
+        patch("blesta_sdk._cli.BlestaRequest") as MockApi,
+        pytest.raises(SystemExit, match="1"),
+    ):
+        MockApi.return_value.submit.return_value = mock_response
+        MockApi.return_value.get_last_request.return_value = {
+            "url": "https://example.com/api/clients/get.json",
+            "args": {"client_id": "999"},
+        }
+        cli()
+    captured = capsys.readouterr()
+    assert "Last Request URL:" in captured.out
+    assert "Last Request Parameters:" in captured.out
+
+
+# --- __repr__ tests ---
+
+
+def test_blesta_request_repr():
+    api = BlestaRequest("https://test.example.com/api", "myuser", "mykey")
+    r = repr(api)
+    assert r == "BlestaRequest(url='https://test.example.com/api/', user='myuser')"
+
+
+def test_blesta_response_repr_short():
+    resp = BlestaResponse('{"ok": true}', 200)
+    r = repr(resp)
+    assert "BlestaResponse(status_code=200" in r
+    assert '{"ok": true}' in r
+    assert "..." not in r
+
+
+def test_blesta_response_repr_long():
+    body = "x" * 100
+    resp = BlestaResponse(body, 200)
+    r = repr(resp)
+    assert "..." in r
+    assert "x" * 80 in r
+
+
+def test_blesta_response_repr_none():
+    resp = BlestaResponse(None, 0)
+    r = repr(resp)
+    assert "BlestaResponse(status_code=0" in r
+    assert "None" in r
+
+
+# --- Retry tests ---
+
+
+def test_submit_no_retry_by_default(blesta_request):
+    """Default max_retries=0 means no retry on failure."""
+    with patch.object(blesta_request.session, "get") as mock_get:
+        mock_get.side_effect = requests.ConnectionError("refused")
+        response = blesta_request.get("clients", "getList")
+
+    assert response.status_code == 0
+    assert mock_get.call_count == 1
+
+
+@patch("blesta_sdk._client.time.sleep")
+def test_submit_retry_on_network_error(mock_sleep):
+    api = BlestaRequest("https://test.example.com/api", "u", "k", max_retries=2)
+    with patch.object(api.session, "get") as mock_get:
+        mock_get.side_effect = [
+            requests.ConnectionError("refused"),
+            Mock(text='{"response": []}', status_code=200),
+        ]
+        response = api.get("clients", "getList")
+
+    assert response.status_code == 200
+    assert mock_get.call_count == 2
+    mock_sleep.assert_called_once_with(1)
+
+
+@patch("blesta_sdk._client.time.sleep")
+def test_submit_retry_on_500(mock_sleep):
+    api = BlestaRequest("https://test.example.com/api", "u", "k", max_retries=2)
+    with patch.object(api.session, "get") as mock_get:
+        mock_get.side_effect = [
+            Mock(text="Internal Server Error", status_code=500),
+            Mock(text='{"response": []}', status_code=200),
+        ]
+        response = api.get("clients", "getList")
+
+    assert response.status_code == 200
+    assert mock_get.call_count == 2
+    mock_sleep.assert_called_once_with(1)
+
+
+@patch("blesta_sdk._client.time.sleep")
+def test_submit_no_retry_on_4xx(mock_sleep):
+    api = BlestaRequest("https://test.example.com/api", "u", "k", max_retries=3)
+    with patch.object(api.session, "get") as mock_get:
+        mock_get.return_value = Mock(text='{"error": "not found"}', status_code=404)
+        response = api.get("clients", "get")
+
+    assert response.status_code == 404
+    assert mock_get.call_count == 1
+    mock_sleep.assert_not_called()
+
+
+@patch("blesta_sdk._client.time.sleep")
+def test_submit_retry_exhausted(mock_sleep):
+    api = BlestaRequest("https://test.example.com/api", "u", "k", max_retries=2)
+    with patch.object(api.session, "get") as mock_get:
+        mock_get.side_effect = requests.ConnectionError("refused")
+        response = api.get("clients", "getList")
+
+    assert response.status_code == 0
+    assert mock_get.call_count == 3  # initial + 2 retries
+    assert mock_sleep.call_count == 2
+
+
+@patch("blesta_sdk._client.time.sleep")
+def test_submit_retry_backoff_timing(mock_sleep):
+    api = BlestaRequest("https://test.example.com/api", "u", "k", max_retries=3)
+    with patch.object(api.session, "post") as mock_post:
+        mock_post.side_effect = requests.Timeout("timed out")
+        api.post("clients", "create")
+
+    # Backoff: 2^0=1, 2^1=2, 2^2=4
+    assert mock_sleep.call_args_list == [
+        ((1,),),
+        ((2,),),
+        ((4,),),
+    ]
+
+
+# --- Extract tests ---
+
+
+def test_extract_multiple_targets(blesta_request):
+    with patch.object(blesta_request, "get_all") as mock_get_all:
+        mock_get_all.side_effect = [
+            [{"id": 1}, {"id": 2}],
+            [{"id": 10}],
+        ]
+        result = blesta_request.extract(
+            [
+                ("clients", "getList"),
+                ("invoices", "getList"),
+            ]
+        )
+
+    assert list(result.keys()) == ["clients.getList", "invoices.getList"]
+    assert len(result["clients.getList"]) == 2
+    assert len(result["invoices.getList"]) == 1
+
+
+def test_extract_with_args(blesta_request):
+    with patch.object(blesta_request, "get_all") as mock_get_all:
+        mock_get_all.return_value = [{"id": 1}]
+        result = blesta_request.extract(
+            [
+                ("clients", "getList", {"status": "active"}),
+            ]
+        )
+
+    mock_get_all.assert_called_once_with("clients", "getList", {"status": "active"})
+    assert "clients.getList" in result
+
+
+def test_extract_empty_targets(blesta_request):
+    result = blesta_request.extract([])
+    assert result == {}
+
+
+def test_extract_mixed_results(blesta_request):
+    with patch.object(blesta_request, "get_all") as mock_get_all:
+        mock_get_all.side_effect = [
+            [{"id": 1}],
+            [],
+        ]
+        result = blesta_request.extract(
+            [
+                ("clients", "getList"),
+                ("packages", "getAll"),
+            ]
+        )
+
+    assert len(result["clients.getList"]) == 1
+    assert len(result["packages.getAll"]) == 0
+
+
+# --- count() tests ---
+
+
+def test_count_returns_int(blesta_request):
+    """count() extracts integer from getListCount response."""
+    response = BlestaResponse(json.dumps({"response": 22376}), 200)
+    with patch.object(blesta_request, "get", return_value=response) as mock_get:
+        result = blesta_request.count("transactions")
+    assert result == 22376
+    assert isinstance(result, int)
+    mock_get.assert_called_once_with("transactions", "getListCount", None)
+
+
+def test_count_custom_method(blesta_request):
+    """count() respects custom method name."""
+    response = BlestaResponse(json.dumps({"response": 5}), 200)
+    with patch.object(blesta_request, "get", return_value=response) as mock_get:
+        result = blesta_request.count("clients", "getStatusCount", {"status": "active"})
+    mock_get.assert_called_once_with("clients", "getStatusCount", {"status": "active"})
+    assert result == 5
+
+
+def test_count_returns_zero_on_http_error(blesta_request):
+    """count() returns 0 on non-200 status."""
+    response = BlestaResponse('{"errors": {"message": "fail"}}', 500)
+    with patch.object(blesta_request, "get", return_value=response):
+        assert blesta_request.count("transactions") == 0
+
+
+def test_count_returns_zero_on_none_data(blesta_request):
+    """count() returns 0 when response has no 'response' key."""
+    response = BlestaResponse('{"other": "data"}', 200)
+    with patch.object(blesta_request, "get", return_value=response):
+        assert blesta_request.count("transactions") == 0
+
+
+def test_count_handles_string_number(blesta_request):
+    """count() converts string '100' to int 100."""
+    response = BlestaResponse(json.dumps({"response": "100"}), 200)
+    with patch.object(blesta_request, "get", return_value=response):
+        assert blesta_request.count("transactions") == 100
+
+
+def test_count_returns_zero_for_non_numeric(blesta_request):
+    """count() returns 0 for non-numeric response data."""
+    response = BlestaResponse(json.dumps({"response": {"unexpected": "dict"}}), 200)
+    with patch.object(blesta_request, "get", return_value=response):
+        assert blesta_request.count("transactions") == 0
+
+
+def test_count_returns_zero_for_zero(blesta_request):
+    """count() returns 0 when API returns 0."""
+    response = BlestaResponse(json.dumps({"response": 0}), 200)
+    with patch.object(blesta_request, "get", return_value=response):
+        assert blesta_request.count("transactions") == 0
 
 
 # --- Integration test (requires valid .env credentials) ---
