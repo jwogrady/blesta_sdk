@@ -1,37 +1,28 @@
-import argparse
-import os
-import json
-from dotenv import load_dotenv
-from blesta_sdk.api import BlestaRequest
+"""Internal CLI entry point for the ``blesta`` command.
 
-# Load environment variables from .env file
-load_dotenv()
+This module is not part of the public API and may change without notice.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+
+from dotenv import load_dotenv
+
+from blesta_sdk._client import BlestaRequest
 
 
 def cli():
+    """CLI entry point for the ``blesta`` command.
+
+    Reads credentials from ``BLESTA_API_URL``, ``BLESTA_API_USER``,
+    and ``BLESTA_API_KEY`` environment variables (or ``.env`` via dotenv).
     """
-    Entry point for the Blesta API Command Line Interface.
+    load_dotenv()
 
-    This function parses command-line arguments, loads API credentials from
-    the environment, initializes the Blesta API, performs the specified API
-    action, and prints the response. It also provides an option to display
-    the details of the last API request made.
-
-    Command-line arguments:
-        --model (str): Blesta API model (e.g., clients).
-        --method (str): Blesta API method (e.g., getList).
-        --action (str): HTTP action to perform (choices: 'GET', 'POST', 'PUT', 'DELETE'; default: 'GET').
-        --params (list of str): Optional key=value pairs (e.g., id=1 status=active).
-        --last-request (bool): Flag to show the last API request made.
-
-    Environment variables:
-        BLESTA_API_URL (str): The URL of the Blesta API.
-        BLESTA_API_USER (str): The username for the Blesta API.
-        BLESTA_API_KEY (str): The API key for the Blesta API.
-
-    Returns:
-        None
-    """
     parser = argparse.ArgumentParser(description="Blesta API Command Line Interface")
     parser.add_argument(
         "--model", required=True, help="Blesta API model (e.g., clients)"
@@ -56,32 +47,33 @@ def cli():
 
     args = parser.parse_args()
 
-    # Load credentials from .env
     url = os.getenv("BLESTA_API_URL")
     user = os.getenv("BLESTA_API_USER")
     key = os.getenv("BLESTA_API_KEY")
 
     if not all([url, user, key]):
-        print("Error: Missing API credentials in .env file.")
-        return
+        print(
+            json.dumps(
+                {
+                    "error": "Missing API credentials."
+                    " Set BLESTA_API_URL, BLESTA_API_USER, and BLESTA_API_KEY."
+                },
+                indent=4,
+            )
+        )
+        sys.exit(1)
 
-    # Parse key=value arguments into a dictionary
     params = dict(param.split("=", 1) for param in args.params) if args.params else {}
 
-    # Initialize the API
     api = BlestaRequest(url, user, key)
-
-    # Perform the API action
     response = api.submit(args.model, args.method, params, args.action)
 
-    # Print the response
     if response.status_code == 200:
-        formatted_response = json.dumps(response.response, indent=4)
-        print(formatted_response)
+        print(json.dumps(response.data, indent=4))
     else:
-        print("Error:", response.errors())
+        print(json.dumps(response.errors(), indent=4))
+        sys.exit(1)
 
-    # Show last request details if --last-request is called
     if args.last_request:
         last_request = api.get_last_request()
         if last_request:

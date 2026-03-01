@@ -1,64 +1,51 @@
+"""Internal response parsing implementation.
+
+This module is not part of the public API. Import
+:class:`~blesta_sdk.BlestaResponse` from ``blesta_sdk`` directly.
+"""
+
 from __future__ import annotations
 
 import csv
 import io
 import json
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     import pandas
 
 
 class BlestaResponse:
-    """
-    Blesta API response handler.
+    """Parsed response from the Blesta API.
+
+    Wraps the raw HTTP response text and status code. Provides
+    properties for accessing parsed JSON data, CSV data, and errors.
+
+    :param response: Raw response body text.
+    :param status_code: HTTP status code.
     """
 
     def __init__(self, response: str, status_code: int):
-        """
-        Initializes the BlestaResponse instance.
-
-        :param response: The raw response data from an API request.
-        :param status_code: The HTTP status code for the request.
-        """
         self._raw = response
         self._status_code = status_code
 
     @property
-    def response(self) -> Optional[Any]:
-        """
-        Returns the parsed 'response' data from the API request.
+    def data(self) -> Any | None:
+        """Parsed ``"response"`` field from the JSON body.
 
-        :return: The value of the 'response' key if present, else None.
+        Returns ``None`` if the key is absent or the body is not JSON.
         """
         formatted = self._format_response()
         return formatted.get("response")
 
     @property
     def status_code(self) -> int:
-        """
-        Returns the HTTP status code.
-
-        :return: The HTTP status code for the request.
-        """
-        return self._status_code
-
-    @property
-    def response_code(self) -> int:
-        """
-        Alias for :attr:`status_code` (deprecated, use ``status_code``).
-
-        :return: The HTTP status code for the request.
-        """
+        """HTTP status code of the response."""
         return self._status_code
 
     @property
     def raw(self) -> str:
-        """
-        Returns the raw API response.
-
-        :return: The raw response as a string.
-        """
+        """Raw response body text."""
         return self._raw
 
     @property
@@ -83,38 +70,36 @@ class BlestaResponse:
         return "," in lines[0]
 
     @property
-    def csv_data(self) -> Optional[list[dict[str, str]]]:
-        """
-        Parses the raw response as CSV and returns a list of dicts.
+    def csv_data(self) -> list[dict[str, str]] | None:
+        """Parse the raw response as CSV.
 
-        :return: List of dicts (one per row, keyed by header), or None if not CSV.
+        :return: List of dicts (one per row, keyed by header column),
+            or ``None`` if :attr:`is_csv` is ``False``.
         """
         if not self.is_csv:
             return None
         reader = csv.DictReader(io.StringIO(self._raw))
         return list(reader)
 
-    def to_dataframe(self) -> "pandas.DataFrame":
-        """
-        Converts the response data to a pandas DataFrame.
+    def to_dataframe(self) -> pandas.DataFrame:
+        """Convert the response to a :class:`pandas.DataFrame`.
 
-        For CSV responses, parses csv_data into a DataFrame.
-        For JSON responses, uses pd.json_normalize on the response data.
+        CSV responses are parsed via :attr:`csv_data`. JSON responses
+        are normalized with :func:`pandas.json_normalize`.
 
-        Requires pandas to be installed. Install with:
-            pip install pandas
+        Requires ``pandas`` (``pip install pandas``).
 
-        :return: pandas DataFrame of the response data.
+        :return: DataFrame of the response data.
         :raises ImportError: If pandas is not installed.
         :raises ValueError: If the response contains no parseable data.
         """
         try:
             import pandas as pd
-        except ImportError:
+        except ImportError as err:
             raise ImportError(
                 "pandas is required for to_dataframe(). "
                 "Install it with: pip install pandas"
-            )
+            ) from err
 
         if self.is_csv:
             data = self.csv_data
@@ -123,9 +108,9 @@ class BlestaResponse:
             return pd.DataFrame(data)
 
         if self.is_json:
-            data = self.response
+            data = self.data
             if data is None:
-                raise ValueError("JSON response has no 'response' key")
+                raise ValueError("JSON response has no 'response' key (data is None)")
             if isinstance(data, (list, dict)):
                 return pd.json_normalize(data)
             raise ValueError(
@@ -137,11 +122,10 @@ class BlestaResponse:
             "Response is neither CSV nor JSON; cannot convert to DataFrame"
         )
 
-    def errors(self) -> Optional[dict[str, Any]]:
-        """
-        Returns any errors present in the response.
+    def errors(self) -> dict[str, Any] | None:
+        """Extract error information from the response.
 
-        :return: Dictionary of errors, or None if no errors.
+        :return: Dict of errors, or ``None`` on success.
         """
         if self.is_csv:
             if self._status_code != 200:
@@ -155,12 +139,8 @@ class BlestaResponse:
         return None
 
     def _format_response(self) -> dict[str, Any]:
-        """
-        Parses the raw response into a dictionary.
-
-        :return: Parsed JSON response.
-        """
+        """Parse raw response as JSON, returning a fallback on failure."""
         try:
             return json.loads(self._raw)
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, TypeError):
             return {"error": "Invalid JSON response"}

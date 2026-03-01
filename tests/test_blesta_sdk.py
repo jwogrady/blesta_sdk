@@ -1,90 +1,72 @@
+import json
+import os
 import sys
+from unittest.mock import Mock, patch
 
 import pytest
 import requests
-from unittest.mock import patch, Mock
-from blesta_sdk.api.blesta_request import BlestaRequest
-from blesta_sdk.core import BlestaResponse
-from blesta_sdk.core.dateutil import _month_boundaries
-from blesta_sdk.cli.blesta_cli import cli
-from dotenv import load_dotenv
-import os
-import json
 
 import blesta_sdk
+from blesta_sdk import BlestaRequest, BlestaResponse
+from blesta_sdk._cli import cli
+from blesta_sdk._dateutil import _month_boundaries
 
-# Load environment variables from .env file
-load_dotenv()
-
-
-@pytest.fixture
-def blesta_request():
-    url = os.getenv("BLESTA_API_URL", "https://aware.status26.com/api")
-    user = os.getenv("BLESTA_API_USER", "user")
-    key = os.getenv("BLESTA_API_KEY", "key")
-    return BlestaRequest(url, user, key)
+# _cli and _dateutil are internal modules. Tests below that use cli() and
+# _month_boundaries() verify private behavior and may need updating if the
+# internal module structure changes.
 
 
-# --- BlestaRequest tests ---
+# --- Public API contract tests ---
 
 
-def test_get_request(blesta_request):
-    with patch.object(blesta_request.session, "get") as mock_get:
-        mock_response = Mock()
-        mock_response.text = '{"success": true}'
-        mock_response.status_code = 200
-        mock_get.return_value = mock_response
-
-        response = blesta_request.get("clients", "getList", {"status": "active"})
-        assert isinstance(response, BlestaResponse)
-        assert response.status_code == 200
-        assert response.raw == '{"success": true}'
+def test_all_exports():
+    """__all__ exposes exactly the public API surface."""
+    assert set(blesta_sdk.__all__) == {"BlestaRequest", "BlestaResponse", "__version__"}
 
 
-def test_post_request(blesta_request):
-    with patch.object(blesta_request.session, "post") as mock_post:
-        mock_response = Mock()
-        mock_response.text = '{"success": true}'
-        mock_response.status_code = 200
-        mock_post.return_value = mock_response
-
-        response = blesta_request.post("clients", "create", {"name": "John Doe"})
-        assert isinstance(response, BlestaResponse)
-        assert response.status_code == 200
-        assert response.raw == '{"success": true}'
+def test_version():
+    assert blesta_sdk.__version__ != "unknown"
+    assert isinstance(blesta_sdk.__version__, str)
 
 
-def test_put_request(blesta_request):
-    with patch.object(blesta_request.session, "put") as mock_put:
-        mock_response = Mock()
-        mock_response.text = '{"success": true}'
-        mock_response.status_code = 200
-        mock_put.return_value = mock_response
-
-        response = blesta_request.put(
-            "clients", "update", {"client_id": 1, "name": "John Doe"}
-        )
-        assert isinstance(response, BlestaResponse)
-        assert response.status_code == 200
-        assert response.raw == '{"success": true}'
+# --- BlestaRequest: HTTP method dispatch ---
 
 
-def test_delete_request(blesta_request):
-    with patch.object(blesta_request.session, "delete") as mock_delete:
-        mock_response = Mock()
-        mock_response.text = '{"success": true}'
-        mock_response.status_code = 200
-        mock_delete.return_value = mock_response
+@pytest.mark.parametrize(
+    "method,session_method",
+    [("get", "get"), ("post", "post"), ("put", "put"), ("delete", "delete")],
+)
+def test_http_method_returns_response(blesta_request, method, session_method):
+    with patch.object(blesta_request.session, session_method) as mock:
+        mock.return_value = Mock(text='{"success": true}', status_code=200)
+        response = getattr(blesta_request, method)("clients", "action", {"k": "v"})
 
-        response = blesta_request.delete("clients", "delete", {"client_id": 1})
-        assert isinstance(response, BlestaResponse)
-        assert response.status_code == 200
-        assert response.raw == '{"success": true}'
+    assert isinstance(response, BlestaResponse)
+    assert response.status_code == 200
+    assert response.raw == '{"success": true}'
+
+
+@pytest.mark.parametrize(
+    "action,kwarg",
+    [("GET", "params"), ("POST", "json"), ("PUT", "json"), ("DELETE", "json")],
+)
+def test_submit_passes_args_correctly(action, kwarg):
+    """GET sends params=, POST/PUT/DELETE send json=."""
+    api = BlestaRequest("https://example.com/api", "user", "key")
+    with patch.object(api.session, action.lower()) as mock:
+        mock.return_value = Mock(text='{"response": {}}', status_code=200)
+        api.submit("clients", "getList", {"status": "active"}, action)
+
+    _, call_kwargs = mock.call_args
+    assert kwarg in call_kwargs
+    assert call_kwargs[kwarg] == {"status": "active"}
 
 
 def test_submit_invalid_action(blesta_request):
+    # Intentional type violation: passing a string not in the Literal type
+    # to verify the runtime ValueError guard.
     with pytest.raises(ValueError):
-        blesta_request.submit("clients", "getList", {}, "INVALID")
+        blesta_request.submit("clients", "getList", {}, "INVALID")  # type: ignore[arg-type]
 
 
 def test_request_exception(blesta_request):
@@ -92,25 +74,37 @@ def test_request_exception(blesta_request):
         blesta_request.session, "get", side_effect=requests.RequestException("Error")
     ):
         response = blesta_request.get("clients", "getList")
-        assert isinstance(response, BlestaResponse)
-        assert response.status_code == 500
-        assert "Error" in response.raw
+
+    assert isinstance(response, BlestaResponse)
+    assert response.status_code == 0
+    assert "Error" in response.raw
+
+
+# --- BlestaRequest: get_last_request ---
+
+
+def test_get_last_request_returns_none_initially():
+    api = BlestaRequest("https://example.com/api", "user", "key")
+    assert api.get_last_request() is None
 
 
 def test_get_last_request(blesta_request):
     with patch.object(blesta_request.session, "get") as mock_get:
-        mock_response = Mock()
-        mock_response.text = '{"success": true}'
-        mock_response.status_code = 200
-        mock_get.return_value = mock_response
-
+        mock_get.return_value = Mock(text='{"success": true}', status_code=200)
         blesta_request.get("clients", "getList", {"status": "active"})
-        last_request = blesta_request.get_last_request()
-        assert (
-            last_request["url"]
-            == f"{os.getenv('BLESTA_API_URL', 'https://aware.status26.com/api')}/clients/getList.json"
-        )
-        assert last_request["args"] == {"status": "active"}
+
+    last = blesta_request.get_last_request()
+    assert last["url"] == blesta_request.base_url + "clients/getList.json"
+    assert last["args"] == {"status": "active"}
+
+
+# --- BlestaRequest: constructor ---
+
+
+def test_base_url_normalization():
+    a = BlestaRequest("https://x.com/api", "u", "k")
+    b = BlestaRequest("https://x.com/api/", "u", "k")
+    assert a.base_url == b.base_url == "https://x.com/api/"
 
 
 def test_default_timeout():
@@ -126,28 +120,26 @@ def test_custom_timeout():
 def test_timeout_passed_to_requests():
     api = BlestaRequest("https://example.com/api", "user", "key", timeout=10)
     with patch.object(api.session, "get") as mock_get:
-        mock_response = Mock()
-        mock_response.text = '{"response": {}}'
-        mock_response.status_code = 200
-        mock_get.return_value = mock_response
-
+        mock_get.return_value = Mock(text='{"response": {}}', status_code=200)
         api.get("clients", "getList")
-        mock_get.assert_called_once_with(
-            "https://example.com/api/clients/getList.json",
-            params={},
-            timeout=10,
-        )
+
+    mock_get.assert_called_once_with(
+        "https://example.com/api/clients/getList.json",
+        params={},
+        timeout=10,
+    )
+
+
+# --- BlestaRequest: context manager / close ---
 
 
 def test_context_manager():
-    with BlestaRequest("https://example.com/api", "user", "key") as api:
-        assert isinstance(api, BlestaRequest)
-        with patch.object(api.session, "close") as mock_close:
-            pass  # __exit__ fires after the with block
-        # verify close wasn't called inside the block
-        mock_close.assert_not_called()
-    # can't easily assert close was called after exit, so test the shape
-    assert api is not None
+    api = BlestaRequest("https://example.com/api", "user", "key")
+    with patch.object(api.session, "close") as mock_close:
+        with api as ctx:
+            assert ctx is api
+            mock_close.assert_not_called()
+        mock_close.assert_called_once()
 
 
 def test_close():
@@ -157,27 +149,26 @@ def test_close():
         mock_close.assert_called_once()
 
 
-# --- BlestaResponse tests ---
+# --- BlestaResponse: data parsing ---
 
 
-def test_format_response_valid_json():
+def test_data_returns_parsed_response_field():
     response = BlestaResponse('{"response": {"success": true}}', 200)
-    assert response.response == {"success": True}
+    assert response.data == {"success": True}
 
 
-def test_format_response_invalid_json():
-    response = BlestaResponse("Invalid JSON", 200)
-    assert response.errors() == {"error": "Invalid JSON response"}
+def test_data_returns_none_when_key_missing():
+    response = BlestaResponse('{"other": "data"}', 200)
+    assert response.data is None
 
 
-def test_blesta_response_errors():
-    response = BlestaResponse('{"errors": {"message": "Error occurred"}}', 400)
-    assert response.errors() == {"message": "Error occurred"}
+def test_data_returns_none_for_csv():
+    csv_text = '"id","name"\n"1","John"\n'
+    response = BlestaResponse(csv_text, 200)
+    assert response.data is None
 
 
-def test_blesta_response_response_code():
-    response = BlestaResponse('{"response": {"id": 1}}', 200)
-    assert response.response_code == 200
+# --- BlestaResponse: status_code ---
 
 
 def test_blesta_response_status_code():
@@ -185,268 +176,44 @@ def test_blesta_response_status_code():
     assert response.status_code == 200
 
 
-def test_blesta_response_no_errors_on_success():
+@pytest.mark.parametrize("code", [401, 404, 500])
+def test_status_code_passthrough(blesta_request, code):
+    with patch.object(blesta_request.session, "get") as mock_get:
+        mock_get.return_value = Mock(
+            text=json.dumps({"errors": {"message": "fail"}}),
+            status_code=code,
+        )
+        response = blesta_request.get("clients", "getList")
+
+    assert response.status_code == code
+    assert response.errors() == {"message": "fail"}
+
+
+# --- BlestaResponse: errors ---
+
+
+def test_errors_returns_errors_dict():
+    response = BlestaResponse('{"errors": {"message": "Error occurred"}}', 400)
+    assert response.errors() == {"message": "Error occurred"}
+
+
+def test_errors_returns_none_on_success():
     response = BlestaResponse('{"response": {"id": 1}}', 200)
     assert response.errors() is None
 
 
-def test_blesta_response_no_response_key():
-    response = BlestaResponse('{"other": "data"}', 200)
-    assert response.response is None
+def test_errors_invalid_json():
+    response = BlestaResponse("Invalid JSON", 200)
+    assert response.errors() == {"error": "Invalid JSON response"}
 
 
-# --- __version__ test ---
+def test_errors_fallback_non_200_without_errors_key():
+    """Non-200 JSON body without 'errors' key returns fallback dict."""
+    response = BlestaResponse('{"other": "data"}', 503)
+    assert response.errors() == {"error": "Invalid JSON response"}
 
 
-def test_version():
-    assert blesta_sdk.__version__ != "unknown"
-    assert isinstance(blesta_sdk.__version__, str)
-
-
-# --- CLI tests ---
-
-
-def test_cli_missing_credentials(capsys):
-    with (
-        patch.dict(
-            os.environ,
-            {"BLESTA_API_URL": "", "BLESTA_API_USER": "", "BLESTA_API_KEY": ""},
-            clear=False,
-        ),
-        patch("sys.argv", ["blesta", "--model", "clients", "--method", "getList"]),
-    ):
-        cli()
-    captured = capsys.readouterr()
-    assert "Missing API credentials" in captured.out
-
-
-def test_cli_successful_get(capsys):
-    mock_response = BlestaResponse('{"response": {"clients": []}}', 200)
-    with (
-        patch.dict(
-            os.environ,
-            {
-                "BLESTA_API_URL": "https://example.com/api",
-                "BLESTA_API_USER": "user",
-                "BLESTA_API_KEY": "key",
-            },
-            clear=False,
-        ),
-        patch("sys.argv", ["blesta", "--model", "clients", "--method", "getList"]),
-        patch("blesta_sdk.cli.blesta_cli.BlestaRequest") as MockApi,
-    ):
-        MockApi.return_value.submit.return_value = mock_response
-        cli()
-    captured = capsys.readouterr()
-    output = json.loads(captured.out)
-    assert output == {"clients": []}
-
-
-def test_cli_error_response(capsys):
-    mock_response = BlestaResponse('{"errors": {"message": "Not found"}}', 404)
-    with (
-        patch.dict(
-            os.environ,
-            {
-                "BLESTA_API_URL": "https://example.com/api",
-                "BLESTA_API_USER": "user",
-                "BLESTA_API_KEY": "key",
-            },
-            clear=False,
-        ),
-        patch(
-            "sys.argv",
-            [
-                "blesta",
-                "--model",
-                "clients",
-                "--method",
-                "get",
-                "--params",
-                "client_id=999",
-            ],
-        ),
-        patch("blesta_sdk.cli.blesta_cli.BlestaRequest") as MockApi,
-    ):
-        MockApi.return_value.submit.return_value = mock_response
-        cli()
-    captured = capsys.readouterr()
-    assert "Error:" in captured.out
-
-
-def test_cli_with_params_and_action(capsys):
-    mock_response = BlestaResponse('{"response": {"created": true}}', 200)
-    with (
-        patch.dict(
-            os.environ,
-            {
-                "BLESTA_API_URL": "https://example.com/api",
-                "BLESTA_API_USER": "user",
-                "BLESTA_API_KEY": "key",
-            },
-            clear=False,
-        ),
-        patch(
-            "sys.argv",
-            [
-                "blesta",
-                "--model",
-                "clients",
-                "--method",
-                "create",
-                "--action",
-                "POST",
-                "--params",
-                "name=John",
-                "status=active",
-            ],
-        ),
-        patch("blesta_sdk.cli.blesta_cli.BlestaRequest") as MockApi,
-    ):
-        MockApi.return_value.submit.return_value = mock_response
-        cli()
-
-    MockApi.return_value.submit.assert_called_once_with(
-        "clients", "create", {"name": "John", "status": "active"}, "POST"
-    )
-
-
-def test_cli_params_with_equals_in_value(capsys):
-    mock_response = BlestaResponse('{"response": {"ok": true}}', 200)
-    with (
-        patch.dict(
-            os.environ,
-            {
-                "BLESTA_API_URL": "https://example.com/api",
-                "BLESTA_API_USER": "user",
-                "BLESTA_API_KEY": "key",
-            },
-            clear=False,
-        ),
-        patch(
-            "sys.argv",
-            [
-                "blesta",
-                "--model",
-                "clients",
-                "--method",
-                "get",
-                "--params",
-                "filter=a=b",
-            ],
-        ),
-        patch("blesta_sdk.cli.blesta_cli.BlestaRequest") as MockApi,
-    ):
-        MockApi.return_value.submit.return_value = mock_response
-        cli()
-
-    MockApi.return_value.submit.assert_called_once_with(
-        "clients", "get", {"filter": "a=b"}, "GET"
-    )
-
-
-def test_cli_last_request_flag(capsys):
-    mock_response = BlestaResponse('{"response": {"id": 1}}', 200)
-    with (
-        patch.dict(
-            os.environ,
-            {
-                "BLESTA_API_URL": "https://example.com/api",
-                "BLESTA_API_USER": "user",
-                "BLESTA_API_KEY": "key",
-            },
-            clear=False,
-        ),
-        patch(
-            "sys.argv",
-            [
-                "blesta",
-                "--model",
-                "clients",
-                "--method",
-                "get",
-                "--params",
-                "client_id=1",
-                "--last-request",
-            ],
-        ),
-        patch("blesta_sdk.cli.blesta_cli.BlestaRequest") as MockApi,
-    ):
-        MockApi.return_value.submit.return_value = mock_response
-        MockApi.return_value.get_last_request.return_value = {
-            "url": "https://example.com/api/clients/get.json",
-            "args": {"client_id": "1"},
-        }
-        cli()
-    captured = capsys.readouterr()
-    assert "Last Request URL:" in captured.out
-    assert "Last Request Parameters:" in captured.out
-
-
-def test_cli_last_request_flag_no_previous(capsys):
-    mock_response = BlestaResponse('{"response": {"id": 1}}', 200)
-    with (
-        patch.dict(
-            os.environ,
-            {
-                "BLESTA_API_URL": "https://example.com/api",
-                "BLESTA_API_USER": "user",
-                "BLESTA_API_KEY": "key",
-            },
-            clear=False,
-        ),
-        patch(
-            "sys.argv",
-            ["blesta", "--model", "clients", "--method", "get", "--last-request"],
-        ),
-        patch("blesta_sdk.cli.blesta_cli.BlestaRequest") as MockApi,
-    ):
-        MockApi.return_value.submit.return_value = mock_response
-        MockApi.return_value.get_last_request.return_value = None
-        cli()
-    captured = capsys.readouterr()
-    assert "No previous API request made." in captured.out
-
-
-# --- Status code fix tests ---
-
-
-def test_4xx_returns_real_status_code(blesta_request):
-    with patch.object(blesta_request.session, "get") as mock_get:
-        mock_response = Mock()
-        mock_response.text = '{"errors": {"message": "Not found"}}'
-        mock_response.status_code = 404
-        mock_get.return_value = mock_response
-
-        response = blesta_request.get("clients", "get", {"client_id": 999})
-        assert response.status_code == 404
-        assert response.errors() == {"message": "Not found"}
-
-
-def test_401_returns_real_status_code(blesta_request):
-    with patch.object(blesta_request.session, "get") as mock_get:
-        mock_response = Mock()
-        mock_response.text = '{"errors": {"message": "Unauthorized"}}'
-        mock_response.status_code = 401
-        mock_get.return_value = mock_response
-
-        response = blesta_request.get("clients", "getList")
-        assert response.status_code == 401
-
-
-def test_500_returns_real_status_code(blesta_request):
-    with patch.object(blesta_request.session, "get") as mock_get:
-        mock_response = Mock()
-        mock_response.text = '{"errors": {"message": "Internal server error"}}'
-        mock_response.status_code = 500
-        mock_get.return_value = mock_response
-
-        response = blesta_request.get("clients", "getList")
-        assert response.status_code == 500
-        assert response.errors() == {"message": "Internal server error"}
-
-
-# --- CSV response tests ---
+# --- BlestaResponse: is_json / is_csv ---
 
 
 def test_is_json_true():
@@ -460,6 +227,19 @@ def test_is_csv_true():
     response = BlestaResponse(csv_text, 200)
     assert response.is_csv is True
     assert response.is_json is False
+
+
+def test_is_csv_false_for_empty():
+    response = BlestaResponse("", 200)
+    assert response.is_csv is False
+
+
+def test_is_csv_false_for_single_line():
+    response = BlestaResponse("just a string", 200)
+    assert response.is_csv is False
+
+
+# --- BlestaResponse: csv_data ---
 
 
 def test_csv_data_parses_correctly():
@@ -490,49 +270,46 @@ def test_csv_response_with_error_status():
     assert "CSV response" in errors["error"]
 
 
-def test_is_csv_false_for_empty():
+# --- BlestaResponse: edge cases ---
+
+
+def test_empty_body_response():
     response = BlestaResponse("", 200)
+    assert response.is_json is False
     assert response.is_csv is False
+    assert response.data is None
+    assert response.errors() == {"error": "Invalid JSON response"}
 
 
-def test_is_csv_false_for_single_line():
-    response = BlestaResponse("just a string", 200)
+def test_none_body_response():
+    """None body should degrade gracefully, not raise TypeError."""
+    response = BlestaResponse(None, 200)
+    assert response.is_json is False
     assert response.is_csv is False
-
-
-def test_response_property_returns_none_for_csv():
-    csv_text = '"id","name"\n"1","John"\n'
-    response = BlestaResponse(csv_text, 200)
-    assert response.response is None
+    assert response.data is None
+    assert response.errors() == {"error": "Invalid JSON response"}
 
 
 # --- Pagination tests ---
 
 
-def test_get_all_pages_iterates(blesta_request):
-    page1 = [{"id": 1}, {"id": 2}]
-    page2 = [{"id": 3}]
-    page3 = []
-
+def test_iter_all_iterates(blesta_request):
     responses = [
-        BlestaResponse(json.dumps({"response": page1}), 200),
-        BlestaResponse(json.dumps({"response": page2}), 200),
-        BlestaResponse(json.dumps({"response": page3}), 200),
+        BlestaResponse(json.dumps({"response": [{"id": 1}, {"id": 2}]}), 200),
+        BlestaResponse(json.dumps({"response": [{"id": 3}]}), 200),
+        BlestaResponse(json.dumps({"response": []}), 200),
     ]
 
     with patch.object(blesta_request, "get", side_effect=responses):
-        result = list(blesta_request.get_all_pages("invoices", "getList"))
+        result = list(blesta_request.iter_all("invoices", "getList"))
 
     assert result == [{"id": 1}, {"id": 2}, {"id": 3}]
 
 
 def test_get_all_returns_list(blesta_request):
-    page1 = [{"id": 1}]
-    page2 = []
-
     responses = [
-        BlestaResponse(json.dumps({"response": page1}), 200),
-        BlestaResponse(json.dumps({"response": page2}), 200),
+        BlestaResponse(json.dumps({"response": [{"id": 1}]}), 200),
+        BlestaResponse(json.dumps({"response": []}), 200),
     ]
 
     with patch.object(blesta_request, "get", side_effect=responses):
@@ -542,62 +319,72 @@ def test_get_all_returns_list(blesta_request):
     assert result == [{"id": 1}]
 
 
-def test_get_all_pages_stops_on_error(blesta_request):
-    page1 = [{"id": 1}]
-
+def test_iter_all_stops_on_error(blesta_request):
     responses = [
-        BlestaResponse(json.dumps({"response": page1}), 200),
+        BlestaResponse(json.dumps({"response": [{"id": 1}]}), 200),
         BlestaResponse('{"errors": {"message": "Forbidden"}}', 403),
     ]
 
     with patch.object(blesta_request, "get", side_effect=responses):
-        result = list(blesta_request.get_all_pages("invoices", "getList"))
+        result = list(blesta_request.iter_all("invoices", "getList"))
 
     assert result == [{"id": 1}]
 
 
-def test_get_all_pages_stops_on_none_response(blesta_request):
+def test_iter_all_stops_on_none_response(blesta_request):
     responses = [
         BlestaResponse('{"other": "data"}', 200),
     ]
 
     with patch.object(blesta_request, "get", side_effect=responses):
-        result = list(blesta_request.get_all_pages("invoices", "getList"))
+        result = list(blesta_request.iter_all("invoices", "getList"))
 
     assert result == []
 
 
-def test_get_all_pages_forwards_args(blesta_request):
+def test_iter_all_stops_on_falsy_data(blesta_request):
+    """iter_all treats falsy data (0, False) as end-of-pages."""
+    responses = [
+        BlestaResponse(json.dumps({"response": 0}), 200),
+    ]
+
+    with patch.object(blesta_request, "get", side_effect=responses):
+        result = list(blesta_request.iter_all("invoices", "getList"))
+
+    assert result == []
+
+
+def test_iter_all_forwards_args(blesta_request):
     responses = [
         BlestaResponse(json.dumps({"response": []}), 200),
     ]
 
     with patch.object(blesta_request, "get", side_effect=responses) as mock_get:
-        list(blesta_request.get_all_pages("invoices", "getList", {"status": "active"}))
+        list(blesta_request.iter_all("invoices", "getList", {"status": "active"}))
 
     mock_get.assert_called_once_with(
         "invoices", "getList", {"status": "active", "page": 1}
     )
 
 
-def test_get_all_pages_start_page(blesta_request):
+def test_iter_all_start_page(blesta_request):
     responses = [
         BlestaResponse(json.dumps({"response": []}), 200),
     ]
 
     with patch.object(blesta_request, "get", side_effect=responses) as mock_get:
-        list(blesta_request.get_all_pages("invoices", "getList", start_page=5))
+        list(blesta_request.iter_all("invoices", "getList", start_page=5))
 
     mock_get.assert_called_once_with("invoices", "getList", {"page": 5})
 
 
-def test_get_all_pages_single_object_response(blesta_request):
+def test_iter_all_single_object_response(blesta_request):
     responses = [
         BlestaResponse(json.dumps({"response": {"id": 1, "name": "John"}}), 200),
     ]
 
     with patch.object(blesta_request, "get", side_effect=responses):
-        result = list(blesta_request.get_all_pages("clients", "get"))
+        result = list(blesta_request.iter_all("clients", "get"))
 
     assert result == [{"id": 1, "name": "John"}]
 
@@ -665,19 +452,7 @@ def test_get_report_extra_vars_already_wrapped(blesta_request):
     assert "vars[vars[company_id]]" not in call_args
 
 
-def test_get_report_returns_blesta_response(blesta_request):
-    csv_text = '"id","amount"\n"1","100.00"\n'
-    mock_response = BlestaResponse(csv_text, 200)
-
-    with patch.object(blesta_request, "get", return_value=mock_response):
-        response = blesta_request.get_report(
-            "tax_liability", "2025-01-01", "2025-01-31"
-        )
-
-    assert isinstance(response, BlestaResponse)
-
-
-# --- _month_boundaries tests ---
+# --- _month_boundaries tests (internal) ---
 
 
 def test_month_boundaries_single_month():
@@ -983,18 +758,19 @@ def test_to_dataframe_json_dict_response():
 def test_to_dataframe_no_pandas_raises():
     csv_text = '"id","name"\n"1","John"\n'
     response = BlestaResponse(csv_text, 200)
-    with patch.dict(sys.modules, {"pandas": None}):
-        with pytest.raises(ImportError, match="pip install pandas"):
-            response.to_dataframe()
+    with (
+        patch.dict(sys.modules, {"pandas": None}),
+        pytest.raises(ImportError, match="pip install pandas"),
+    ):
+        response.to_dataframe()
 
 
-def test_to_dataframe_empty_csv():
-    csv_text = '"id","name"\n"1","John"\n'
-    response = BlestaResponse(csv_text, 200)
-    df = response.to_dataframe()
-    assert len(df) == 1
-    # Verify structure is correct
-    assert list(df.columns) == ["id", "name"]
+def test_to_dataframe_headers_only_csv():
+    """Headers-only CSV (< 2 lines) is not recognized as CSV by is_csv."""
+    response = BlestaResponse('"id","name"\n', 200)
+    assert response.is_csv is False
+    with pytest.raises(ValueError, match="neither CSV nor JSON"):
+        response.to_dataframe()
 
 
 def test_to_dataframe_non_parseable_raises():
@@ -1006,8 +782,171 @@ def test_to_dataframe_non_parseable_raises():
 def test_to_dataframe_json_no_response_key_raises():
     json_text = json.dumps({"other": "data"})
     response = BlestaResponse(json_text, 200)
-    with pytest.raises(ValueError, match="no 'response' key"):
+    with pytest.raises(ValueError, match="data is None"):
         response.to_dataframe()
+
+
+def test_to_dataframe_string_data_raises():
+    """JSON with non-dict/non-list data raises ValueError."""
+    json_text = json.dumps({"response": "hello"})
+    response = BlestaResponse(json_text, 200)
+    with pytest.raises(ValueError, match="Cannot convert response of type str"):
+        response.to_dataframe()
+
+
+# --- CLI tests (internal) ---
+
+
+def test_cli_missing_credentials(cli_env, capsys):
+    with (
+        patch.dict(
+            os.environ,
+            {"BLESTA_API_URL": "", "BLESTA_API_USER": "", "BLESTA_API_KEY": ""},
+            clear=False,
+        ),
+        patch("sys.argv", ["blesta", "--model", "clients", "--method", "getList"]),
+        pytest.raises(SystemExit, match="1"),
+    ):
+        cli()
+    captured = capsys.readouterr()
+    output = json.loads(captured.out)
+    assert "Missing API credentials" in output["error"]
+
+
+def test_cli_successful_get(cli_env, capsys):
+    mock_response = BlestaResponse('{"response": {"clients": []}}', 200)
+    with (
+        patch("sys.argv", ["blesta", "--model", "clients", "--method", "getList"]),
+        patch("blesta_sdk._cli.BlestaRequest") as MockApi,
+    ):
+        MockApi.return_value.submit.return_value = mock_response
+        cli()
+    captured = capsys.readouterr()
+    output = json.loads(captured.out)
+    assert output == {"clients": []}
+
+
+def test_cli_error_response(cli_env, capsys):
+    mock_response = BlestaResponse('{"errors": {"message": "Not found"}}', 404)
+    with (
+        patch(
+            "sys.argv",
+            [
+                "blesta",
+                "--model",
+                "clients",
+                "--method",
+                "get",
+                "--params",
+                "client_id=999",
+            ],
+        ),
+        patch("blesta_sdk._cli.BlestaRequest") as MockApi,
+        pytest.raises(SystemExit, match="1"),
+    ):
+        MockApi.return_value.submit.return_value = mock_response
+        cli()
+    captured = capsys.readouterr()
+    output = json.loads(captured.out)
+    assert output == {"message": "Not found"}
+
+
+def test_cli_with_params_and_action(cli_env):
+    mock_response = BlestaResponse('{"response": {"created": true}}', 200)
+    with (
+        patch(
+            "sys.argv",
+            [
+                "blesta",
+                "--model",
+                "clients",
+                "--method",
+                "create",
+                "--action",
+                "POST",
+                "--params",
+                "name=John",
+                "status=active",
+            ],
+        ),
+        patch("blesta_sdk._cli.BlestaRequest") as MockApi,
+    ):
+        MockApi.return_value.submit.return_value = mock_response
+        cli()
+
+    MockApi.return_value.submit.assert_called_once_with(
+        "clients", "create", {"name": "John", "status": "active"}, "POST"
+    )
+
+
+def test_cli_params_with_equals_in_value(cli_env):
+    mock_response = BlestaResponse('{"response": {"ok": true}}', 200)
+    with (
+        patch(
+            "sys.argv",
+            [
+                "blesta",
+                "--model",
+                "clients",
+                "--method",
+                "get",
+                "--params",
+                "filter=a=b",
+            ],
+        ),
+        patch("blesta_sdk._cli.BlestaRequest") as MockApi,
+    ):
+        MockApi.return_value.submit.return_value = mock_response
+        cli()
+
+    MockApi.return_value.submit.assert_called_once_with(
+        "clients", "get", {"filter": "a=b"}, "GET"
+    )
+
+
+def test_cli_last_request_flag(cli_env, capsys):
+    mock_response = BlestaResponse('{"response": {"id": 1}}', 200)
+    with (
+        patch(
+            "sys.argv",
+            [
+                "blesta",
+                "--model",
+                "clients",
+                "--method",
+                "get",
+                "--params",
+                "client_id=1",
+                "--last-request",
+            ],
+        ),
+        patch("blesta_sdk._cli.BlestaRequest") as MockApi,
+    ):
+        MockApi.return_value.submit.return_value = mock_response
+        MockApi.return_value.get_last_request.return_value = {
+            "url": "https://example.com/api/clients/get.json",
+            "args": {"client_id": "1"},
+        }
+        cli()
+    captured = capsys.readouterr()
+    assert "Last Request URL:" in captured.out
+    assert "Last Request Parameters:" in captured.out
+
+
+def test_cli_last_request_flag_no_previous(cli_env, capsys):
+    mock_response = BlestaResponse('{"response": {"id": 1}}', 200)
+    with (
+        patch(
+            "sys.argv",
+            ["blesta", "--model", "clients", "--method", "get", "--last-request"],
+        ),
+        patch("blesta_sdk._cli.BlestaRequest") as MockApi,
+    ):
+        MockApi.return_value.submit.return_value = mock_response
+        MockApi.return_value.get_last_request.return_value = None
+        cli()
+    captured = capsys.readouterr()
+    assert "No previous API request made." in captured.out
 
 
 # --- Integration test (requires valid .env credentials) ---
@@ -1018,9 +957,9 @@ def test_credentials(blesta_request):
     response = blesta_request.get("clients", "getList", {"status": "active"})
     assert isinstance(response, BlestaResponse)
     assert response.status_code == 200
-    assert response.response is not None
+    assert response.data is not None
 
-    print(json.dumps(response.response, indent=4))
+    print(json.dumps(response.data, indent=4))
 
 
 if __name__ == "__main__":

@@ -5,6 +5,62 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- **Breaking:** Renamed `response.response` property to `response.data`.
+- **Breaking:** Renamed `get_all_pages()` to `iter_all()`.
+- **Breaking:** Network errors now return `status_code=0` instead of `500`.
+- **Breaking:** Removed deprecated `response_code` property (use `status_code`).
+- CLI error output is now JSON (was Python repr).
+- CLI missing-credentials message updated and now outputs JSON.
+- `submit()` action parameter uses `Literal["GET", "POST", "PUT", "DELETE"]` typing.
+- `__all__` includes `__version__`.
+
+### Fixed
+- `_format_response()` now handles `None` body without raising `TypeError`.
+- CLI errors are now valid JSON, matching the documented output contract.
+
+## [0.5.0] - 2026-03-01
+
+### Changed
+- **Breaking:** Flattened package structure — removed `api/`, `core/`, and `cli/` subpackages. Import from `blesta_sdk` directly: `from blesta_sdk import BlestaRequest, BlestaResponse`.
+- Internal modules renamed to `_client.py`, `_response.py`, `_dateutil.py`, `_cli.py` (private, do not import directly).
+- Shared test fixture extracted to `tests/conftest.py`.
+
+### Removed
+- `examples/` directory (CLI examples already covered in README).
+- Three re-export `__init__.py` files (one per former subpackage).
+
+### Migration
+- `from blesta_sdk.api import BlestaRequest` → `from blesta_sdk import BlestaRequest`
+- `from blesta_sdk.core import BlestaResponse` → `from blesta_sdk import BlestaResponse`
+- `from blesta_sdk import BlestaRequest, BlestaResponse` (added in 0.4.0) continues to work unchanged.
+
+## [0.4.0] - 2026-03-01
+
+### Fixed
+- Removed `black` from runtime dependencies (was incorrectly listed as a production dependency).
+- CLI now returns exit code 1 on missing credentials and API errors (previously always exited 0).
+- Moved `load_dotenv()` from module-level to inside `cli()` to prevent side effects on import.
+- Replaced production URL in test fixtures with `test.example.com`.
+
+### Added
+- Top-level exports: `from blesta_sdk import BlestaRequest, BlestaResponse` now works directly.
+- `py.typed` marker for PEP 561 type-checking support.
+- PyPI classifiers (development status, license, Python versions, OS).
+- Project URLs (repository, changelog, issues) in package metadata.
+- Explicit `black` and `ruff` configuration in `pyproject.toml`.
+- Hatch sdist excludes to keep CI, tests, and lockfiles out of distribution.
+
+### Changed
+- Package description updated to "Python SDK and CLI for the Blesta billing platform REST API".
+- `cli` submodule no longer imported at package load (reduces import overhead and side effects).
+- Upgraded `publish.yml` GitHub Actions to `actions/checkout@v4` and `actions/setup-python@v5`.
+
+### Removed
+- Unnecessary `tests/__init__.py`.
+
 ## [0.3.0] - 2026-02-28
 
 ### Added
@@ -65,35 +121,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.1.4] - 2025-01-20
 
-### Added
-- New features and improvements.
-
-### Fixed
-- Bug fixes and performance improvements.
+- Packaging and dependency fixes.
 
 ## [0.1.3] - 2025-01-20 [YANKED]
 
-### Added
-- New features and improvements.
-
-### Fixed
-- Bug fixes and performance improvements.
-
 ## [0.1.2] - 2025-01-20 [YANKED]
 
-### Added
-- New features and improvements.
-
-### Fixed
-- Bug fixes and performance improvements.
-
 ## [0.1.1] - 2025-01-19 [YANKED]
-
-### Added
-- New features and improvements.
-
-### Fixed
-- Bug fixes and performance improvements.
 
 ## [0.1.0] - 2025-01-19
 
