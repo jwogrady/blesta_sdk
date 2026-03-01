@@ -207,11 +207,14 @@ def test_version():
 
 
 def test_cli_missing_credentials(capsys):
-    with patch.dict(
-        os.environ,
-        {"BLESTA_API_URL": "", "BLESTA_API_USER": "", "BLESTA_API_KEY": ""},
-        clear=False,
-    ), patch("sys.argv", ["blesta", "--model", "clients", "--method", "getList"]):
+    with (
+        patch.dict(
+            os.environ,
+            {"BLESTA_API_URL": "", "BLESTA_API_USER": "", "BLESTA_API_KEY": ""},
+            clear=False,
+        ),
+        patch("sys.argv", ["blesta", "--model", "clients", "--method", "getList"]),
+    ):
         cli()
     captured = capsys.readouterr()
     assert "Missing API credentials" in captured.out
@@ -219,19 +222,19 @@ def test_cli_missing_credentials(capsys):
 
 def test_cli_successful_get(capsys):
     mock_response = BlestaResponse('{"response": {"clients": []}}', 200)
-    with patch.dict(
-        os.environ,
-        {
-            "BLESTA_API_URL": "https://example.com/api",
-            "BLESTA_API_USER": "user",
-            "BLESTA_API_KEY": "key",
-        },
-        clear=False,
-    ), patch(
-        "sys.argv", ["blesta", "--model", "clients", "--method", "getList"]
-    ), patch(
-        "blesta_sdk.cli.blesta_cli.BlestaRequest"
-    ) as MockApi:
+    with (
+        patch.dict(
+            os.environ,
+            {
+                "BLESTA_API_URL": "https://example.com/api",
+                "BLESTA_API_USER": "user",
+                "BLESTA_API_KEY": "key",
+            },
+            clear=False,
+        ),
+        patch("sys.argv", ["blesta", "--model", "clients", "--method", "getList"]),
+        patch("blesta_sdk.cli.blesta_cli.BlestaRequest") as MockApi,
+    ):
         MockApi.return_value.submit.return_value = mock_response
         cli()
     captured = capsys.readouterr()
@@ -241,28 +244,30 @@ def test_cli_successful_get(capsys):
 
 def test_cli_error_response(capsys):
     mock_response = BlestaResponse('{"errors": {"message": "Not found"}}', 404)
-    with patch.dict(
-        os.environ,
-        {
-            "BLESTA_API_URL": "https://example.com/api",
-            "BLESTA_API_USER": "user",
-            "BLESTA_API_KEY": "key",
-        },
-        clear=False,
-    ), patch(
-        "sys.argv",
-        [
-            "blesta",
-            "--model",
-            "clients",
-            "--method",
-            "get",
-            "--params",
-            "client_id=999",
-        ],
-    ), patch(
-        "blesta_sdk.cli.blesta_cli.BlestaRequest"
-    ) as MockApi:
+    with (
+        patch.dict(
+            os.environ,
+            {
+                "BLESTA_API_URL": "https://example.com/api",
+                "BLESTA_API_USER": "user",
+                "BLESTA_API_KEY": "key",
+            },
+            clear=False,
+        ),
+        patch(
+            "sys.argv",
+            [
+                "blesta",
+                "--model",
+                "clients",
+                "--method",
+                "get",
+                "--params",
+                "client_id=999",
+            ],
+        ),
+        patch("blesta_sdk.cli.blesta_cli.BlestaRequest") as MockApi,
+    ):
         MockApi.return_value.submit.return_value = mock_response
         cli()
     captured = capsys.readouterr()
@@ -271,31 +276,33 @@ def test_cli_error_response(capsys):
 
 def test_cli_with_params_and_action(capsys):
     mock_response = BlestaResponse('{"response": {"created": true}}', 200)
-    with patch.dict(
-        os.environ,
-        {
-            "BLESTA_API_URL": "https://example.com/api",
-            "BLESTA_API_USER": "user",
-            "BLESTA_API_KEY": "key",
-        },
-        clear=False,
-    ), patch(
-        "sys.argv",
-        [
-            "blesta",
-            "--model",
-            "clients",
-            "--method",
-            "create",
-            "--action",
-            "POST",
-            "--params",
-            "name=John",
-            "status=active",
-        ],
-    ), patch(
-        "blesta_sdk.cli.blesta_cli.BlestaRequest"
-    ) as MockApi:
+    with (
+        patch.dict(
+            os.environ,
+            {
+                "BLESTA_API_URL": "https://example.com/api",
+                "BLESTA_API_USER": "user",
+                "BLESTA_API_KEY": "key",
+            },
+            clear=False,
+        ),
+        patch(
+            "sys.argv",
+            [
+                "blesta",
+                "--model",
+                "clients",
+                "--method",
+                "create",
+                "--action",
+                "POST",
+                "--params",
+                "name=John",
+                "status=active",
+            ],
+        ),
+        patch("blesta_sdk.cli.blesta_cli.BlestaRequest") as MockApi,
+    ):
         MockApi.return_value.submit.return_value = mock_response
         cli()
 
@@ -306,28 +313,30 @@ def test_cli_with_params_and_action(capsys):
 
 def test_cli_params_with_equals_in_value(capsys):
     mock_response = BlestaResponse('{"response": {"ok": true}}', 200)
-    with patch.dict(
-        os.environ,
-        {
-            "BLESTA_API_URL": "https://example.com/api",
-            "BLESTA_API_USER": "user",
-            "BLESTA_API_KEY": "key",
-        },
-        clear=False,
-    ), patch(
-        "sys.argv",
-        [
-            "blesta",
-            "--model",
-            "clients",
-            "--method",
-            "get",
-            "--params",
-            "filter=a=b",
-        ],
-    ), patch(
-        "blesta_sdk.cli.blesta_cli.BlestaRequest"
-    ) as MockApi:
+    with (
+        patch.dict(
+            os.environ,
+            {
+                "BLESTA_API_URL": "https://example.com/api",
+                "BLESTA_API_USER": "user",
+                "BLESTA_API_KEY": "key",
+            },
+            clear=False,
+        ),
+        patch(
+            "sys.argv",
+            [
+                "blesta",
+                "--model",
+                "clients",
+                "--method",
+                "get",
+                "--params",
+                "filter=a=b",
+            ],
+        ),
+        patch("blesta_sdk.cli.blesta_cli.BlestaRequest") as MockApi,
+    ):
         MockApi.return_value.submit.return_value = mock_response
         cli()
 
@@ -338,29 +347,31 @@ def test_cli_params_with_equals_in_value(capsys):
 
 def test_cli_last_request_flag(capsys):
     mock_response = BlestaResponse('{"response": {"id": 1}}', 200)
-    with patch.dict(
-        os.environ,
-        {
-            "BLESTA_API_URL": "https://example.com/api",
-            "BLESTA_API_USER": "user",
-            "BLESTA_API_KEY": "key",
-        },
-        clear=False,
-    ), patch(
-        "sys.argv",
-        [
-            "blesta",
-            "--model",
-            "clients",
-            "--method",
-            "get",
-            "--params",
-            "client_id=1",
-            "--last-request",
-        ],
-    ), patch(
-        "blesta_sdk.cli.blesta_cli.BlestaRequest"
-    ) as MockApi:
+    with (
+        patch.dict(
+            os.environ,
+            {
+                "BLESTA_API_URL": "https://example.com/api",
+                "BLESTA_API_USER": "user",
+                "BLESTA_API_KEY": "key",
+            },
+            clear=False,
+        ),
+        patch(
+            "sys.argv",
+            [
+                "blesta",
+                "--model",
+                "clients",
+                "--method",
+                "get",
+                "--params",
+                "client_id=1",
+                "--last-request",
+            ],
+        ),
+        patch("blesta_sdk.cli.blesta_cli.BlestaRequest") as MockApi,
+    ):
         MockApi.return_value.submit.return_value = mock_response
         MockApi.return_value.get_last_request.return_value = {
             "url": "https://example.com/api/clients/get.json",
@@ -374,20 +385,22 @@ def test_cli_last_request_flag(capsys):
 
 def test_cli_last_request_flag_no_previous(capsys):
     mock_response = BlestaResponse('{"response": {"id": 1}}', 200)
-    with patch.dict(
-        os.environ,
-        {
-            "BLESTA_API_URL": "https://example.com/api",
-            "BLESTA_API_USER": "user",
-            "BLESTA_API_KEY": "key",
-        },
-        clear=False,
-    ), patch(
-        "sys.argv",
-        ["blesta", "--model", "clients", "--method", "get", "--last-request"],
-    ), patch(
-        "blesta_sdk.cli.blesta_cli.BlestaRequest"
-    ) as MockApi:
+    with (
+        patch.dict(
+            os.environ,
+            {
+                "BLESTA_API_URL": "https://example.com/api",
+                "BLESTA_API_USER": "user",
+                "BLESTA_API_KEY": "key",
+            },
+            clear=False,
+        ),
+        patch(
+            "sys.argv",
+            ["blesta", "--model", "clients", "--method", "get", "--last-request"],
+        ),
+        patch("blesta_sdk.cli.blesta_cli.BlestaRequest") as MockApi,
+    ):
         MockApi.return_value.submit.return_value = mock_response
         MockApi.return_value.get_last_request.return_value = None
         cli()
@@ -876,9 +889,7 @@ def test_get_report_series_skips_http_errors(blesta_request):
     csv_ok = _make_csv_response('"Package","Revenue"\n"Hosting","100"\n')
     csv_err = BlestaResponse('{"errors": {"message": "fail"}}', 500)
 
-    with patch.object(
-        blesta_request, "get_report", side_effect=[csv_ok, csv_err]
-    ):
+    with patch.object(blesta_request, "get_report", side_effect=[csv_ok, csv_err]):
         result = blesta_request.get_report_series(
             "package_revenue", "2025-01", "2025-02"
         )
@@ -891,9 +902,7 @@ def test_get_report_series_skips_non_csv(blesta_request):
     json_resp = BlestaResponse('{"response": {"id": 1}}', 200)
     csv_resp = _make_csv_response('"Package","Revenue"\n"Hosting","100"\n')
 
-    with patch.object(
-        blesta_request, "get_report", side_effect=[json_resp, csv_resp]
-    ):
+    with patch.object(blesta_request, "get_report", side_effect=[json_resp, csv_resp]):
         result = blesta_request.get_report_series(
             "package_revenue", "2025-01", "2025-02"
         )
@@ -905,9 +914,7 @@ def test_get_report_series_skips_non_csv(blesta_request):
 def test_get_report_series_empty_csv(blesta_request):
     csv_headers_only = _make_csv_response('"Package","Revenue"\n')
 
-    with patch.object(
-        blesta_request, "get_report", return_value=csv_headers_only
-    ):
+    with patch.object(blesta_request, "get_report", return_value=csv_headers_only):
         result = blesta_request.get_report_series(
             "package_revenue", "2025-01", "2025-01"
         )
@@ -957,7 +964,9 @@ def test_to_dataframe_csv_response():
 
 
 def test_to_dataframe_json_list_response():
-    json_text = json.dumps({"response": [{"id": 1, "name": "John"}, {"id": 2, "name": "Jane"}]})
+    json_text = json.dumps(
+        {"response": [{"id": 1, "name": "John"}, {"id": 2, "name": "Jane"}]}
+    )
     response = BlestaResponse(json_text, 200)
     df = response.to_dataframe()
     assert len(df) == 2

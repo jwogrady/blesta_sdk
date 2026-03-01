@@ -261,9 +261,7 @@ class BlestaRequest:
         boundaries = _month_boundaries(start_month, end_month)
         for first_day, last_day, period in boundaries:
             logger.debug(f"Fetching report {report_type!r} for {period}")
-            response = self.get_report(
-                report_type, first_day, last_day, extra_vars
-            )
+            response = self.get_report(report_type, first_day, last_day, extra_vars)
             yield (period, response)
 
     def get_report_series(

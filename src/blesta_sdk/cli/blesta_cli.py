@@ -66,9 +66,7 @@ def cli():
         return
 
     # Parse key=value arguments into a dictionary
-    params = (
-        dict(param.split("=", 1) for param in args.params) if args.params else {}
-    )
+    params = dict(param.split("=", 1) for param in args.params) if args.params else {}
 
     # Initialize the API
     api = BlestaRequest(url, user, key)
