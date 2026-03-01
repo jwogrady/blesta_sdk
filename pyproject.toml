@@ -44,6 +44,8 @@ exclude = [
     "/.gitignore",
     ".python-version",
     ".coverage",
+    ".vscode/",
+    "coverage.json",
     "CLAUDE.md",
     "tests/",
     "examples/",

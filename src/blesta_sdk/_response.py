@@ -25,9 +25,10 @@ class BlestaResponse:
     :param status_code: HTTP status code.
     """
 
-    def __init__(self, response: str, status_code: int):
+    def __init__(self, response: str | None, status_code: int):
         self._raw = response
         self._status_code = status_code
+        self._parsed: dict[str, Any] | None = None
 
     @property
     def data(self) -> Any | None:
@@ -140,7 +141,9 @@ class BlestaResponse:
 
     def _format_response(self) -> dict[str, Any]:
         """Parse raw response as JSON, returning a fallback on failure."""
-        try:
-            return json.loads(self._raw)
-        except (json.JSONDecodeError, TypeError):
-            return {"error": "Invalid JSON response"}
+        if self._parsed is None:
+            try:
+                self._parsed = json.loads(self._raw)
+            except (json.JSONDecodeError, TypeError):
+                self._parsed = {"error": "Invalid JSON response"}
+        return self._parsed

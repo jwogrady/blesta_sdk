@@ -17,7 +17,8 @@ def cli():
     """CLI entry point for the ``blesta`` command.
 
     Reads credentials from ``BLESTA_API_URL``, ``BLESTA_API_USER``,
-    and ``BLESTA_API_KEY`` environment variables (or ``.env`` via dotenv).
+    and ``BLESTA_API_KEY`` environment variables. If ``python-dotenv``
+    is installed, also loads ``.env`` from the current directory.
     """
     try:
         from dotenv import load_dotenv

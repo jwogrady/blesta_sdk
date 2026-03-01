@@ -237,4 +237,4 @@ Supports context manager (`with BlestaRequest(...) as api:`).
 
 ## License
 
-[MIT](LICENSE)
+[MIT](https://github.com/Status26/blesta_sdk/blob/main/LICENSE)
