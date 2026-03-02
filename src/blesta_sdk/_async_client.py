@@ -361,6 +361,7 @@ class AsyncBlestaRequest:
         args: dict[str, Any] | None = None,
         start_page: int = 1,
         max_pages: int | None = None,
+        on_error: Literal["raise", "warn"] = "warn",
     ) -> list[Any]:
         """Fetch all pages and return results as a single list.
 
@@ -378,10 +379,18 @@ class AsyncBlestaRequest:
         :param start_page: Page number to start from.
         :param max_pages: Maximum number of pages to fetch. ``None``
             means no limit.
+        :param on_error: Behavior on non-200 status codes. ``"raise"``
+            raises :class:`~blesta_sdk.PaginationError` with partial
+            results attached. ``"warn"`` logs a warning and stops
+            iteration (backward-compatible default).
         :return: List of all result items across all pages.
+        :raises PaginationError: If *on_error* is ``"raise"`` and a
+            non-200 response is received.
         """
         results: list[Any] = []
-        async for item in self.iter_all(model, method, args, start_page, max_pages):
+        async for item in self.iter_all(
+            model, method, args, start_page, max_pages, on_error
+        ):
             results.append(item)
         return results
 
@@ -619,14 +628,15 @@ class AsyncBlestaRequest:
         async def _fetch(
             target: tuple[str, str] | tuple[str, str, dict[str, Any]],
         ) -> tuple[str, list[Any]]:
-            if len(target) == 3:
-                model, method, args = target  # type: ignore[misc]
-            else:
-                model, method = target  # type: ignore[misc]
-                args = None
-            key = f"{model}.{method}"
-            data = await self.get_all(model, method, args)
-            return key, data
+            async with self._semaphore:
+                if len(target) == 3:
+                    model, method, args = target  # type: ignore[misc]
+                else:
+                    model, method = target  # type: ignore[misc]
+                    args = None
+                key = f"{model}.{method}"
+                data = await self.get_all(model, method, args)
+                return key, data
 
         pairs = await asyncio.gather(*[_fetch(t) for t in targets])
         return dict(pairs)

@@ -340,6 +340,7 @@ class BlestaRequest:
         args: dict[str, Any] | None = None,
         start_page: int = 1,
         max_pages: int | None = None,
+        on_error: Literal["raise", "warn"] = "warn",
     ) -> list[Any]:
         """Fetch all pages and return results as a single list.
 
@@ -357,9 +358,15 @@ class BlestaRequest:
         :param start_page: Page number to start from.
         :param max_pages: Maximum number of pages to fetch. ``None``
             means no limit.
+        :param on_error: Behavior on non-200 status codes. ``"raise"``
+            raises :class:`~blesta_sdk.PaginationError` with partial
+            results attached. ``"warn"`` logs a warning and stops
+            iteration (backward-compatible default).
         :return: List of all result items across all pages.
+        :raises PaginationError: If *on_error* is ``"raise"`` and a
+            non-200 response is received.
         """
-        return list(self.iter_all(model, method, args, start_page, max_pages))
+        return list(self.iter_all(model, method, args, start_page, max_pages, on_error))
 
     def iter_pages(
         self,

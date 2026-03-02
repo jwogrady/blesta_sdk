@@ -1641,6 +1641,35 @@ def test_get_all_max_pages(blesta_request):
     assert result == [{"id": 1}]
 
 
+def test_get_all_on_error_raise(blesta_request):
+    """get_all passes on_error='raise' through to iter_all."""
+    from blesta_sdk import PaginationError
+
+    responses = [
+        Mock(text=json.dumps({"response": [{"id": 1}]}), status_code=200),
+        Mock(text="error", status_code=500),
+    ]
+    with (
+        patch.object(blesta_request.session, "get", side_effect=responses),
+        pytest.raises(PaginationError) as exc_info,
+    ):
+        blesta_request.get_all("clients", "getList", on_error="raise")
+    assert exc_info.value.page == 2
+    assert exc_info.value.status_code == 500
+    assert exc_info.value.partial_items == [{"id": 1}]
+
+
+def test_get_all_on_error_warn_default(blesta_request):
+    """get_all default on_error='warn' stops silently on non-200."""
+    responses = [
+        Mock(text=json.dumps({"response": [{"id": 1}]}), status_code=200),
+        Mock(text="error", status_code=500),
+    ]
+    with patch.object(blesta_request.session, "get", side_effect=responses):
+        result = blesta_request.get_all("clients", "getList")
+    assert result == [{"id": 1}]
+
+
 # --- Repeat page detection ---
 
 
