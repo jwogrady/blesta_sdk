@@ -17,7 +17,7 @@ from requests.adapters import HTTPAdapter
 from requests.auth import HTTPBasicAuth
 
 from blesta_sdk._dateutil import _month_boundaries
-from blesta_sdk._exceptions import PaginationError
+from blesta_sdk._pagination import PaginationState
 from blesta_sdk._response import BlestaResponse
 from blesta_sdk._validation import validate_segment
 
@@ -58,6 +58,10 @@ class BlestaRequest:
         Auth. ``"header"`` sends credentials via ``BLESTA-API-USER`` and
         ``BLESTA-API-KEY`` headers (recommended by Blesta, requires no
         server-side CGI/PHP-FPM configuration). Defaults to ``"basic"``.
+    :param raise_on_error: When ``True``, :meth:`submit` calls
+        :meth:`~blesta_sdk.BlestaResponse.raise_for_status` before
+        returning, raising a :class:`~blesta_sdk.BlestaError` subclass
+        on non-success responses. Defaults to ``False``.
     """
 
     def __init__(
@@ -71,6 +75,7 @@ class BlestaRequest:
         pool_connections: int = 10,
         pool_maxsize: int = 10,
         auth_method: Literal["basic", "header"] = "basic",
+        raise_on_error: bool = False,
     ):
         self.base_url = url.rstrip("/") + "/"
         self.user = user
@@ -79,6 +84,7 @@ class BlestaRequest:
         self.max_retries = max_retries
         self.retry_mutations = retry_mutations
         self.auth_method = auth_method
+        self.raise_on_error = raise_on_error
         self._last_request: dict[str, Any] | None = None
         self.session = requests.Session()
         if auth_method == "header":
@@ -217,9 +223,16 @@ class BlestaRequest:
                 else:
                     raise ValueError("Invalid HTTP action specified.")
 
-                last_response = BlestaResponse(response.text, response.status_code)
+                last_response = BlestaResponse(
+                    response.text, response.status_code, response.headers
+                )
 
-                if response.status_code < 500 or attempt == effective_retries:
+                is_retriable = (
+                    response.status_code >= 500 or response.status_code == 429
+                )
+                if not is_retriable or attempt == effective_retries:
+                    if self.raise_on_error:
+                        last_response.raise_for_status()
                     return last_response
 
                 logger.warning(
@@ -235,9 +248,22 @@ class BlestaRequest:
                 last_response = BlestaResponse(str(e), 0)
 
                 if attempt == effective_retries:
+                    if self.raise_on_error:
+                        last_response.raise_for_status()
                     return last_response
 
                 logger.warning("Retry %d/%d: %s", attempt + 1, effective_retries, e)
+
+            if last_response is not None and last_response.status_code == 429:
+                try:
+                    retry_after = int(
+                        last_response.headers.get("Retry-After", "")
+                    )
+                except (ValueError, TypeError):
+                    retry_after = 0
+                if retry_after > 0:
+                    time.sleep(retry_after)
+                    continue
 
             base_delay = 2**attempt
             time.sleep(base_delay * (0.5 + random.random() * 0.5))  # noqa: S311
@@ -275,63 +301,22 @@ class BlestaRequest:
             non-200 response is received.
         """
         base_args = args or {}
+        state = PaginationState(start_page, max_pages, on_error)
 
-        page = start_page
-        pages_fetched = 0
-        collected: list[Any] = []
-        prev_data: list[Any] | None = None
-        repeat_count = 0
-
-        while True:
-            if max_pages is not None and pages_fetched >= max_pages:
+        while state.has_next_page():
+            response = self.get(model, method, {**base_args, "page": state.page})
+            if state.check_response(response):
                 return
-
-            response = self.get(model, method, {**base_args, "page": page})
-
-            if response.status_code != 200:
-                if on_error == "raise":
-                    raise PaginationError(
-                        f"Pagination error: HTTP {response.status_code} on page {page}",
-                        page=page,
-                        status_code=response.status_code,
-                        partial_items=collected,
-                    )
-                logger.warning(
-                    "Pagination stopped: HTTP %d on page %d",
-                    response.status_code,
-                    page,
-                )
-                return
-
             data = response.data
-            if not data:
+            if state.check_data(data):
                 return
-
+            state.collect(data)
             if isinstance(data, list):
-                # Detect stuck pagination (same page returned repeatedly).
-                if prev_data is not None and data == prev_data:
-                    repeat_count += 1
-                    if repeat_count >= 3:
-                        logger.error(
-                            "Pagination aborted: page %d returned identical "
-                            "data %d times consecutively",
-                            page,
-                            repeat_count + 1,
-                        )
-                        return
-                else:
-                    repeat_count = 0
-                prev_data = data
-
-                collected.extend(data)
                 yield from data
             else:
-                collected.append(data)
                 yield data
                 return
-
-            pages_fetched += 1
-            page += 1
+            state.advance()
 
     def get_all(
         self,
@@ -397,56 +382,22 @@ class BlestaRequest:
             non-200 response is received.
         """
         base_args = args or {}
-        page = start_page
-        pages_fetched = 0
-        prev_data: list[Any] | None = None
-        repeat_count = 0
+        state = PaginationState(start_page, max_pages, on_error)
 
-        while True:
-            if max_pages is not None and pages_fetched >= max_pages:
+        while state.has_next_page():
+            response = self.get(model, method, {**base_args, "page": state.page})
+            if state.check_response(response):
                 return
-
-            response = self.get(model, method, {**base_args, "page": page})
-            if response.status_code != 200:
-                if on_error == "raise":
-                    raise PaginationError(
-                        f"Pagination error: HTTP {response.status_code} on page {page}",
-                        page=page,
-                        status_code=response.status_code,
-                    )
-                logger.warning(
-                    "Pagination stopped: HTTP %d on page %d",
-                    response.status_code,
-                    page,
-                )
-                return
-
             data = response.data
-            if not data:
+            if state.check_data(data):
                 return
-
+            state.collect(data)
             if isinstance(data, list):
-                if prev_data is not None and data == prev_data:
-                    repeat_count += 1
-                    if repeat_count >= 3:
-                        logger.error(
-                            "Pagination aborted: page %d returned identical "
-                            "data %d times consecutively",
-                            page,
-                            repeat_count + 1,
-                        )
-                        return
-                else:
-                    repeat_count = 0
-                prev_data = data
-
                 yield data
             else:
                 yield [data]
                 return
-
-            pages_fetched += 1
-            page += 1
+            state.advance()
 
     def count(
         self,

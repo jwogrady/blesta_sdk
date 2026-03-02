@@ -19,6 +19,10 @@ def validate_segment(segment: str, name: str) -> None:
     """
     if not segment:
         raise ValueError(f"{name} cannot be empty")
+    if "\x00" in segment:
+        raise ValueError(f"{name} cannot contain null bytes")
+    if any(c.isspace() for c in segment):
+        raise ValueError(f"{name} cannot contain whitespace")
     if "://" in segment:
         raise ValueError(f"{name} cannot contain scheme")
     if segment.startswith("//"):
@@ -29,3 +33,7 @@ def validate_segment(segment: str, name: str) -> None:
         raise ValueError(f"{name} cannot contain '..'")
     if "\\" in segment:
         raise ValueError(f"{name} cannot contain backslashes")
+    if "?" in segment:
+        raise ValueError(f"{name} cannot contain '?'")
+    if "#" in segment:
+        raise ValueError(f"{name} cannot contain '#'")

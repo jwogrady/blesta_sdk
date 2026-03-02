@@ -1,6 +1,6 @@
 [project]
 name = "blesta_sdk"
-version = "0.5.1"
+version = "0.6.0"
 description = "Python SDK and CLI for the Blesta billing platform REST API"
 readme = "README.md"
 license = "MIT"

@@ -209,7 +209,7 @@ with BlestaRequest("https://your-blesta-domain.com/api", "user", "key") as api:
 
 ## Error Handling
 
-All request methods return a `BlestaResponse`. No exceptions are raised for HTTP errors.
+By default, all request methods return a `BlestaResponse` — no exceptions are raised for HTTP errors:
 
 ```python
 response = api.get("clients", "get", {"client_id": 999})
@@ -226,6 +226,41 @@ if response.status_code == 0:
     print("Network error:", response.raw)
 ```
 
+### Fail-Fast Mode
+
+For scripts that want exception-based error handling, use `raise_on_error=True`:
+
+```python
+from blesta_sdk import BlestaRequest, BlestaAPIError
+
+api = BlestaRequest(url, user, key, raise_on_error=True)
+
+try:
+    response = api.get("clients", "getList")
+except BlestaAPIError as e:
+    print(e.status_code, e.errors)
+```
+
+Or call `raise_for_status()` manually on any response:
+
+```python
+response = api.get("clients", "getList")
+response.raise_for_status()  # raises on 4xx/5xx/connection errors
+```
+
+Exception hierarchy:
+
+| Exception | Trigger |
+|---|---|
+| `BlestaError` | Base class for all SDK exceptions |
+| `BlestaConnectionError` | `status_code == 0` (network failure) |
+| `BlestaAPIError` | 400–499 client errors |
+| `BlestaAuthError` | 401 / 403 specifically |
+| `BlestaRateLimitError` | 429 (includes `.retry_after` seconds) |
+| `BlestaServerError` | 500–599 server errors |
+
+All exceptions carry `status_code`, `errors`, and `headers` attributes.
+
 ### Retry
 
 For production pipelines, enable automatic retry with exponential backoff:
@@ -233,9 +268,28 @@ For production pipelines, enable automatic retry with exponential backoff:
 ```python
 api = BlestaRequest(url, user, key, max_retries=3)
 
-# Retries on network errors and 5xx responses (1s, 2s, 4s delays)
-# Does NOT retry on 4xx client errors
+# Retries on network errors, 5xx, and 429 responses (with jitter)
+# Does NOT retry on other 4xx client errors
 response = api.get("clients", "getList")
+```
+
+### Rate Limiting
+
+429 responses are automatically retried when `max_retries > 0`:
+
+- If the server sends a `Retry-After` header, the client sleeps for that many seconds (integer format only; HTTP-date is not supported)
+- If the header is absent or unparseable, falls back to exponential backoff with jitter
+- `max_retries=0` (default) disables all retry, including 429
+
+The `Retry-After` value is also available on exceptions:
+
+```python
+from blesta_sdk import BlestaRateLimitError
+
+try:
+    response.raise_for_status()
+except BlestaRateLimitError as e:
+    print(f"Retry after {e.retry_after} seconds")
 ```
 
 ## API Discovery
@@ -353,7 +407,7 @@ Output is JSON to stdout. On errors, the error dict is printed as JSON and the p
 
 ## API Reference
 
-### `BlestaRequest(url, user, key, timeout=30, max_retries=0, retry_mutations=False, pool_connections=10, pool_maxsize=10, auth_method="basic")`
+### `BlestaRequest(url, user, key, timeout=30, max_retries=0, retry_mutations=False, pool_connections=10, pool_maxsize=10, auth_method="basic", raise_on_error=False)`
 
 | Method | Description |
 |---|---|
@@ -378,7 +432,7 @@ Output is JSON to stdout. On errors, the error dict is printed as JSON and the p
 
 Supports context manager (`with BlestaRequest(...) as api:`).
 
-### `AsyncBlestaRequest(url, user, key, timeout=30, max_retries=0, retry_mutations=False, max_connections=10, max_keepalive_connections=10, max_concurrency=10, auth_method="basic")`
+### `AsyncBlestaRequest(url, user, key, timeout=30, max_retries=0, retry_mutations=False, max_connections=10, max_keepalive_connections=10, max_concurrency=10, auth_method="basic", raise_on_error=False)`
 
 Same methods as `BlestaRequest`, all `async`. Additional async-specific methods:
 
@@ -408,11 +462,14 @@ Same methods as `BlestaRequest`, all `async`. Additional async-specific methods:
 | `status_code` | `int` | HTTP status code; `0` = network error |
 | `data` | `Any \| None` | Parsed `"response"` field from JSON body |
 | `raw` | `str \| None` | Raw response body text |
+| `headers` | `Mapping[str, str]` | HTTP response headers |
 | `errors()` | `dict \| None` | Error dict if present, otherwise `None` |
 | `is_json` | `bool` | `True` if response is valid JSON |
 | `is_csv` | `bool` | `True` if response is CSV data |
 | `csv_data` | `list[dict] \| None` | Parsed CSV rows, or `None` |
 | `to_dataframe()` | `DataFrame` | Convert to pandas DataFrame (requires pandas) |
+| `raise_for_status()` | `None` | Raise typed exception on error; no-op for 1xx–3xx |
+| `free_raw()` | `None` | Release raw text to save memory (caches preserved) |
 
 ### `__version__`
 
@@ -420,7 +477,7 @@ The installed package version is available at runtime:
 
 ```python
 import blesta_sdk
-print(blesta_sdk.__version__)  # e.g. "0.5.0"
+print(blesta_sdk.__version__)  # e.g. "0.6.0"
 ```
 
 ## Blesta API Reference

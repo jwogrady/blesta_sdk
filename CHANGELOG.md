@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-03-02
+
+### Added
+- `raise_for_status()` method on `BlestaResponse` — raises typed exceptions for non-success responses. No-op for 1xx–3xx status codes.
+- `raise_on_error` flag on `BlestaRequest` and `AsyncBlestaRequest` (default `False`). When `True`, `submit()` calls `raise_for_status()` before returning.
+- Exception hierarchy: `BlestaError` (base), `BlestaConnectionError` (status 0), `BlestaAPIError` (4xx), `BlestaAuthError` (401/403), `BlestaRateLimitError` (429, includes `retry_after`), `BlestaServerError` (5xx). All carry `status_code`, `errors`, and `headers`.
+- `response.headers` property on `BlestaResponse` — exposes HTTP response headers as `Mapping[str, str]`.
+- Automatic 429 retry with `Retry-After` support. When a 429 response includes a `Retry-After` header (seconds), the client sleeps for that duration instead of exponential backoff. Falls back to backoff if the header is absent or unparseable. Respects `max_retries` and `retry_mutations` gating.
+
+### Fixed
+- `iter_all()` no longer unconditionally accumulates items in memory. The `collected` list is only allocated when `on_error="raise"`.
+- `PaginationError.partial_items` now works correctly for `iter_pages()` (previously only wired in `iter_all()`).
+- Async `get_last_request()` reads from `ContextVar` for per-task determinism under concurrency.
+- `validate_segment()` now rejects whitespace, null bytes, `?`, and `#` in URL segments.
+
+### Internal
+- Extracted shared pagination state into `_pagination.py` (`PaginationState` class). Sync and async clients delegate page-level control flow (max-page gating, error handling, stuck-page detection, partial-item collection) to this shared helper, reducing ~100 lines of duplicated logic.
+
 ## [0.5.1] - 2026-03-01
 
 ### Added

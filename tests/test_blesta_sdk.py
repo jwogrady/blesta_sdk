@@ -24,9 +24,15 @@ def test_all_exports():
     """__all__ exposes exactly the public API surface."""
     assert set(blesta_sdk.__all__) == {
         "AsyncBlestaRequest",
+        "BlestaAPIError",
+        "BlestaAuthError",
+        "BlestaConnectionError",
         "BlestaDiscovery",
+        "BlestaError",
+        "BlestaRateLimitError",
         "BlestaRequest",
         "BlestaResponse",
+        "BlestaServerError",
         "MethodSpec",
         "PaginationError",
         "__version__",
@@ -1750,7 +1756,7 @@ def test_iter_pages_single_object(blesta_request):
 
 
 def test_iter_pages_on_error_raise(blesta_request):
-    """iter_pages with on_error='raise' raises PaginationError."""
+    """iter_pages with on_error='raise' raises PaginationError with partial_items."""
     from blesta_sdk import PaginationError
 
     responses = [
@@ -1764,6 +1770,7 @@ def test_iter_pages_on_error_raise(blesta_request):
         list(blesta_request.iter_pages("clients", "getList", on_error="raise"))
     assert exc_info.value.page == 2
     assert exc_info.value.status_code == 500
+    assert exc_info.value.partial_items == [{"id": 1}]
 
 
 def test_iter_pages_repeat_detection(blesta_request):
@@ -1776,6 +1783,48 @@ def test_iter_pages_repeat_detection(blesta_request):
     with patch.object(blesta_request.session, "get", side_effect=responses):
         pages = list(blesta_request.iter_pages("clients", "getList"))
     assert pages == [[{"id": 1}], [{"id": 1}], [{"id": 1}]]
+
+
+def test_iter_pages_on_error_raise_page1(blesta_request):
+    """iter_pages on_error='raise' on page 1 returns empty partial_items."""
+    from blesta_sdk import PaginationError
+
+    responses = [Mock(text="error", status_code=500)]
+    with (
+        patch.object(blesta_request.session, "get", side_effect=responses),
+        pytest.raises(PaginationError) as exc_info,
+    ):
+        list(blesta_request.iter_pages("clients", "getList", on_error="raise"))
+    assert exc_info.value.page == 1
+    assert exc_info.value.partial_items == []
+
+
+def test_iter_all_warn_does_not_accumulate(blesta_request):
+    """iter_all with on_error='warn' does not accumulate a collected list."""
+    responses = [
+        Mock(text=json.dumps({"response": [{"id": i}]}), status_code=200)
+        for i in range(1, 4)
+    ] + [Mock(text=json.dumps({"response": []}), status_code=200)]
+    with patch.object(blesta_request.session, "get", side_effect=responses):
+        items = list(blesta_request.iter_all("clients", "getList"))
+    assert items == [{"id": 1}, {"id": 2}, {"id": 3}]
+
+
+def test_iter_all_raise_accumulates_partial_items(blesta_request):
+    """iter_all with on_error='raise' accumulates items for PaginationError."""
+    from blesta_sdk import PaginationError
+
+    responses = [
+        Mock(text=json.dumps({"response": [{"id": 1}, {"id": 2}]}), status_code=200),
+        Mock(text=json.dumps({"response": [{"id": 3}]}), status_code=200),
+        Mock(text="error", status_code=500),
+    ]
+    with (
+        patch.object(blesta_request.session, "get", side_effect=responses),
+        pytest.raises(PaginationError) as exc_info,
+    ):
+        list(blesta_request.iter_all("clients", "getList", on_error="raise"))
+    assert exc_info.value.partial_items == [{"id": 1}, {"id": 2}, {"id": 3}]
 
 
 # --- Retry safety (idempotent-only) ---
@@ -1950,6 +1999,16 @@ def test_discovery_init_called_once():
         ("clients", "..\\secret"),
         ("", "getList"),
         ("clients", ""),
+        ("clients ", "getList"),
+        ("clients", "get List"),
+        ("clients\t", "getList"),
+        ("clients\n", "getList"),
+        ("clients\x00", "getList"),
+        ("clients", "\x00getList"),
+        ("clients?foo=1", "getList"),
+        ("clients", "getList?x=1"),
+        ("clients#frag", "getList"),
+        ("clients", "getList#frag"),
     ],
 )
 def test_url_validation_rejects_unsafe_segments(blesta_request, model, method):
@@ -1986,6 +2045,238 @@ def test_url_construction_plugin_model():
     assert called_url == (
         "https://example.com/api/support_manager.tickets/getList.json"
     )
+
+
+# --- Response headers plumbing ---
+
+
+def test_response_headers_accessible(blesta_request):
+    """Headers from the HTTP response are stored on BlestaResponse."""
+    with patch.object(blesta_request.session, "get") as mock:
+        mock.return_value = Mock(
+            text='{"response": {}}',
+            status_code=200,
+            headers={"Content-Type": "application/json", "X-Custom": "value"},
+        )
+        response = blesta_request.get("clients", "getList")
+    assert response.headers["Content-Type"] == "application/json"
+    assert response.headers["X-Custom"] == "value"
+
+
+def test_response_retry_after_header_readable(blesta_request):
+    """Retry-After header is accessible as a string for downstream use."""
+    with patch.object(blesta_request.session, "get") as mock:
+        mock.return_value = Mock(
+            text='{"error": "rate limited"}',
+            status_code=429,
+            headers={"Retry-After": "120"},
+        )
+        response = blesta_request.get("clients", "getList")
+    assert response.headers["Retry-After"] == "120"
+    assert response.status_code == 429
+
+
+def test_response_network_error_has_empty_headers(blesta_request):
+    """Network errors produce a response with empty headers."""
+    with patch.object(blesta_request.session, "get") as mock:
+        mock.side_effect = requests.ConnectionError("connection refused")
+        response = blesta_request.get("clients", "getList")
+    assert response.status_code == 0
+    assert response.headers == {}
+
+
+def test_response_headers_default_empty():
+    """BlestaResponse without headers arg defaults to empty mapping."""
+    response = BlestaResponse('{"response": {}}', 200)
+    assert response.headers == {}
+
+
+# --- 429 rate-limit retry ---
+
+
+@patch("blesta_sdk._client.random.random", return_value=1.0)
+@patch("blesta_sdk._client.time.sleep")
+def test_submit_retry_on_429_with_retry_after(mock_sleep, _mock_random):
+    """429 with Retry-After header sleeps for the specified duration."""
+    api = BlestaRequest("https://test.example.com/api", "u", "k", max_retries=2)
+    with patch.object(api.session, "get") as mock_get:
+        mock_get.side_effect = [
+            Mock(
+                text='{"error": "rate limited"}',
+                status_code=429,
+                headers={"Retry-After": "5"},
+            ),
+            Mock(text='{"response": []}', status_code=200, headers={}),
+        ]
+        response = api.get("clients", "getList")
+
+    assert response.status_code == 200
+    assert mock_get.call_count == 2
+    mock_sleep.assert_called_once_with(5)
+
+
+@patch("blesta_sdk._client.random.random", return_value=1.0)
+@patch("blesta_sdk._client.time.sleep")
+def test_submit_retry_on_429_without_retry_after(mock_sleep, _mock_random):
+    """429 without Retry-After falls back to exponential backoff."""
+    api = BlestaRequest("https://test.example.com/api", "u", "k", max_retries=2)
+    with patch.object(api.session, "get") as mock_get:
+        mock_get.side_effect = [
+            Mock(text='{"error": "rate limited"}', status_code=429, headers={}),
+            Mock(text='{"response": []}', status_code=200, headers={}),
+        ]
+        response = api.get("clients", "getList")
+
+    assert response.status_code == 200
+    assert mock_get.call_count == 2
+    mock_sleep.assert_called_once_with(1)  # 2^0 * (0.5 + 1.0*0.5) = 1
+
+
+def test_submit_no_retry_on_429_when_max_retries_zero(blesta_request):
+    """429 is not retried when max_retries is 0 (default)."""
+    with patch.object(blesta_request.session, "get") as mock_get:
+        mock_get.return_value = Mock(
+            text='{"error": "rate limited"}',
+            status_code=429,
+            headers={"Retry-After": "5"},
+        )
+        response = blesta_request.get("clients", "getList")
+
+    assert response.status_code == 429
+    assert mock_get.call_count == 1
+
+
+@patch("blesta_sdk._client.random.random", return_value=1.0)
+@patch("blesta_sdk._client.time.sleep")
+def test_submit_429_retry_after_headers_plumbed(mock_sleep, _mock_random):
+    """Retry-After header is accessible on the final 429 response."""
+    api = BlestaRequest("https://test.example.com/api", "u", "k", max_retries=1)
+    with patch.object(api.session, "get") as mock_get:
+        mock_get.return_value = Mock(
+            text='{"error": "rate limited"}',
+            status_code=429,
+            headers={"Retry-After": "60"},
+        )
+        response = api.get("clients", "getList")
+
+    assert response.status_code == 429
+    assert response.headers["Retry-After"] == "60"
+    assert mock_get.call_count == 2
+
+
+# --- raise_for_status ---
+
+
+def test_raise_for_status_connection_error():
+    """status_code 0 raises BlestaConnectionError."""
+    response = BlestaResponse("connection refused", 0)
+    with pytest.raises(blesta_sdk.BlestaConnectionError) as exc_info:
+        response.raise_for_status()
+    assert exc_info.value.status_code == 0
+    assert exc_info.value.headers == {}
+
+
+def test_raise_for_status_auth_401():
+    """status_code 401 raises BlestaAuthError."""
+    response = BlestaResponse('{"message": "unauthorized"}', 401, {"X-Req": "1"})
+    with pytest.raises(blesta_sdk.BlestaAuthError) as exc_info:
+        response.raise_for_status()
+    assert exc_info.value.status_code == 401
+    assert exc_info.value.headers["X-Req"] == "1"
+    assert isinstance(exc_info.value, blesta_sdk.BlestaAPIError)
+
+
+def test_raise_for_status_auth_403():
+    """status_code 403 raises BlestaAuthError."""
+    response = BlestaResponse('{"message": "forbidden"}', 403)
+    with pytest.raises(blesta_sdk.BlestaAuthError) as exc_info:
+        response.raise_for_status()
+    assert exc_info.value.status_code == 403
+
+
+def test_raise_for_status_429_with_retry_after():
+    """status_code 429 raises BlestaRateLimitError with retry_after parsed."""
+    response = BlestaResponse(
+        '{"error": "rate limited"}', 429, {"Retry-After": "120"}
+    )
+    with pytest.raises(blesta_sdk.BlestaRateLimitError) as exc_info:
+        response.raise_for_status()
+    assert exc_info.value.status_code == 429
+    assert exc_info.value.retry_after == 120
+    assert exc_info.value.headers["Retry-After"] == "120"
+    assert isinstance(exc_info.value, blesta_sdk.BlestaAPIError)
+
+
+def test_raise_for_status_429_without_retry_after():
+    """status_code 429 without header sets retry_after to None."""
+    response = BlestaResponse('{"error": "rate limited"}', 429)
+    with pytest.raises(blesta_sdk.BlestaRateLimitError) as exc_info:
+        response.raise_for_status()
+    assert exc_info.value.retry_after is None
+
+
+def test_raise_for_status_500():
+    """status_code 500 raises BlestaServerError."""
+    response = BlestaResponse("Internal Server Error", 500)
+    with pytest.raises(blesta_sdk.BlestaServerError) as exc_info:
+        response.raise_for_status()
+    assert exc_info.value.status_code == 500
+    assert isinstance(exc_info.value, blesta_sdk.BlestaError)
+
+
+def test_raise_for_status_generic_400():
+    """Generic 4xx raises BlestaAPIError."""
+    response = BlestaResponse('{"errors": {"field": "invalid"}}', 400)
+    with pytest.raises(blesta_sdk.BlestaAPIError) as exc_info:
+        response.raise_for_status()
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.errors is not None
+
+
+def test_raise_for_status_success_noop():
+    """Successful responses (< 400) are a no-op."""
+    response = BlestaResponse('{"response": {}}', 200)
+    response.raise_for_status()  # Should not raise
+
+
+# --- raise_on_error flag (sync) ---
+
+
+def test_raise_on_error_raises_on_4xx():
+    """raise_on_error=True causes submit() to raise on 4xx."""
+    api = BlestaRequest(
+        "https://test.example.com/api", "u", "k", raise_on_error=True
+    )
+    with patch.object(api.session, "get") as mock_get:
+        mock_get.return_value = Mock(
+            text='{"errors": {"field": "bad"}}', status_code=400, headers={}
+        )
+        with pytest.raises(blesta_sdk.BlestaAPIError) as exc_info:
+            api.get("clients", "getList")
+    assert exc_info.value.status_code == 400
+
+
+def test_raise_on_error_raises_on_connection_error():
+    """raise_on_error=True causes submit() to raise on network errors."""
+    api = BlestaRequest(
+        "https://test.example.com/api", "u", "k", raise_on_error=True
+    )
+    with patch.object(api.session, "get") as mock_get:
+        mock_get.side_effect = requests.ConnectionError("refused")
+        with pytest.raises(blesta_sdk.BlestaConnectionError):
+            api.get("clients", "getList")
+
+
+def test_raise_on_error_false_returns_response():
+    """raise_on_error=False (default) returns BlestaResponse on error."""
+    api = BlestaRequest("https://test.example.com/api", "u", "k")
+    with patch.object(api.session, "get") as mock_get:
+        mock_get.return_value = Mock(
+            text='{"errors": {"field": "bad"}}', status_code=400, headers={}
+        )
+        response = api.get("clients", "getList")
+    assert isinstance(response, BlestaResponse)
+    assert response.status_code == 400
 
 
 if __name__ == "__main__":

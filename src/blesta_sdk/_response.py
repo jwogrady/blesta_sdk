@@ -6,9 +6,11 @@ This module is not part of the public API. Import
 
 from __future__ import annotations
 
+import contextlib
 import csv
 import io
 import json
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -26,11 +28,18 @@ class BlestaResponse:
 
     :param response: Raw response body text.
     :param status_code: HTTP status code.
+    :param headers: HTTP response headers. Defaults to empty.
     """
 
-    def __init__(self, response: str | None, status_code: int):
+    def __init__(
+        self,
+        response: str | None,
+        status_code: int,
+        headers: Mapping[str, str] | None = None,
+    ):
         self._raw = response
         self._status_code = status_code
+        self._headers: Mapping[str, str] = headers or {}
         self._parsed: dict[str, Any] | object = _UNSET
         self._json_valid: bool | None = None
         self._csv_cache: list[dict[str, str]] | None | object = _UNSET
@@ -55,6 +64,11 @@ class BlestaResponse:
     def status_code(self) -> int:
         """HTTP status code of the response."""
         return self._status_code
+
+    @property
+    def headers(self) -> Mapping[str, str]:
+        """HTTP response headers."""
+        return self._headers
 
     @property
     def raw(self) -> str | None:
@@ -140,6 +154,66 @@ class BlestaResponse:
         raise ValueError(
             "Response is neither CSV nor JSON; cannot convert to DataFrame"
         )
+
+    def raise_for_status(self) -> None:
+        """Raise an exception if the response indicates an error.
+
+        No-op for successful responses (status < 400).
+
+        :raises BlestaConnectionError: If ``status_code`` is ``0``.
+        :raises BlestaAuthError: If ``status_code`` is 401 or 403.
+        :raises BlestaRateLimitError: If ``status_code`` is 429.
+        :raises BlestaServerError: If ``status_code`` is 500--599.
+        :raises BlestaAPIError: If ``status_code`` is 400--499 (other).
+        """
+        from blesta_sdk._exceptions import (
+            BlestaAPIError,
+            BlestaAuthError,
+            BlestaConnectionError,
+            BlestaRateLimitError,
+            BlestaServerError,
+        )
+
+        code = self._status_code
+        if code == 0:
+            raise BlestaConnectionError(
+                self._raw or "Connection failed",
+                status_code=0,
+                errors=self.errors(),
+                headers=self._headers,
+            )
+        if code in (401, 403):
+            raise BlestaAuthError(
+                f"Authentication failed (HTTP {code})",
+                status_code=code,
+                errors=self.errors(),
+                headers=self._headers,
+            )
+        if code == 429:
+            retry_after = None
+            with contextlib.suppress(ValueError, TypeError):
+                retry_after = int(self._headers.get("Retry-After", ""))
+            raise BlestaRateLimitError(
+                "Rate limited (HTTP 429)",
+                status_code=429,
+                errors=self.errors(),
+                headers=self._headers,
+                retry_after=retry_after,
+            )
+        if 500 <= code < 600:
+            raise BlestaServerError(
+                f"Server error (HTTP {code})",
+                status_code=code,
+                errors=self.errors(),
+                headers=self._headers,
+            )
+        if 400 <= code < 500:
+            raise BlestaAPIError(
+                f"API error (HTTP {code})",
+                status_code=code,
+                errors=self.errors(),
+                headers=self._headers,
+            )
 
     def errors(self) -> dict[str, Any] | None:
         """Extract error information from the response.
