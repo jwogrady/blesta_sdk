@@ -1,0 +1,2938 @@
+{
+  "metadata": {
+    "extracted_at": "2026-03-02T00:51:58Z",
+    "inference": {
+      "category": {
+        "description": "Inferred from method name prefix patterns",
+        "source": "prefix_rules_v1"
+      },
+      "http_method": {
+        "description": "Inferred from method name prefix patterns",
+        "source": "prefix_rules_v1"
+      }
+    },
+    "model_count": 8,
+    "plugins": [
+      "cms",
+      "domains",
+      "extension_generator",
+      "softaculous",
+      "webhooks"
+    ],
+    "schema_version": "2.0.0",
+    "source_type": "github_php_docblocks",
+    "total_methods": 97
+  },
+  "models": {
+    "cms.cms_pages": {
+      "methods": {
+        "add": {
+          "category": "api",
+          "description": "Adds a new CMS page",
+          "http_method": "POST",
+          "params": [
+            {
+              "default": null,
+              "description": "A list of input vars for creating a CMS page, including:",
+              "fields": [
+                {
+                  "description": "The URI of the page",
+                  "name": "uri"
+                },
+                {
+                  "description": "The language of the page",
+                  "name": "lang"
+                },
+                {
+                  "description": "The page title",
+                  "name": "title"
+                },
+                {
+                  "description": "The page content",
+                  "name": "content"
+                },
+                {
+                  "description": "The type of the page content",
+                  "name": "content_type"
+                }
+              ],
+              "name": "vars",
+              "required": true,
+              "type": "array"
+            }
+          ],
+          "return_description": "",
+          "return_type": "",
+          "signature": "public add(array $vars)"
+        },
+        "delete": {
+          "category": "api",
+          "description": "Removes a CMS page with the given URI and all of its language variants",
+          "http_method": "DELETE",
+          "params": [
+            {
+              "default": null,
+              "description": "The URI of the CMS page to remove",
+              "name": "uri",
+              "required": true,
+              "type": "string"
+            }
+          ],
+          "return_description": "",
+          "return_type": "",
+          "signature": "public delete($uri)"
+        },
+        "edit": {
+          "category": "api",
+          "description": "Edits a CMS page",
+          "http_method": "PUT",
+          "params": [
+            {
+              "default": null,
+              "description": "The URI of the page to edit",
+              "name": "uri",
+              "required": true,
+              "type": "string"
+            },
+            {
+              "default": null,
+              "description": "The language of the page to edit",
+              "name": "lang",
+              "required": true,
+              "type": "string"
+            },
+            {
+              "default": null,
+              "description": "A list of input vars for editing a CMS page, including:",
+              "fields": [
+                {
+                  "description": "The URI of the page",
+                  "name": "uri"
+                },
+                {
+                  "description": "The page title",
+                  "name": "title"
+                },
+                {
+                  "description": "The page content",
+                  "name": "content"
+                },
+                {
+                  "description": "The type of the page content",
+                  "name": "content_type"
+                }
+              ],
+              "name": "vars",
+              "required": true,
+              "type": "array"
+            }
+          ],
+          "return_description": "",
+          "return_type": "",
+          "signature": "public edit($uri, $lang, array $vars)"
+        },
+        "get": {
+          "category": "api",
+          "description": "Fetches a page at the given URI",
+          "http_method": "GET",
+          "params": [
+            {
+              "default": null,
+              "description": "The URI of the page",
+              "name": "uri",
+              "required": true,
+              "type": "string"
+            },
+            {
+              "default": "null",
+              "description": "The language of the page",
+              "name": "lang",
+              "required": false,
+              "type": "string"
+            }
+          ],
+          "return_description": "An stdClass object representing the CMS page, or false if none exist",
+          "return_type": "mixed",
+          "signature": "public get($uri, $lang = null) : mixed"
+        },
+        "getAll": {
+          "category": "api",
+          "description": "Returns a list of all pages of the current company. Returns only one language, for all languages use CmsPages::getAllLang()",
+          "http_method": "GET",
+          "params": [],
+          "return_description": "An stdClass array of objects representing CMS pages for the given company",
+          "return_type": "array",
+          "signature": "public getAll() : array"
+        },
+        "getAllLang": {
+          "category": "api",
+          "description": "Fetches a page with all of its languages",
+          "http_method": "GET",
+          "params": [
+            {
+              "default": null,
+              "description": "The URI of the page",
+              "name": "uri",
+              "required": true,
+              "type": "string"
+            }
+          ],
+          "return_description": "An stdClass object representing the CMS page, or false if none exist",
+          "return_type": "mixed",
+          "signature": "public getAllLang($uri) : mixed"
+        },
+        "getContentTypes": {
+          "category": "api",
+          "description": "Returns all valid content types",
+          "http_method": "GET",
+          "params": [],
+          "return_description": "A keyed array of content types",
+          "return_type": "array",
+          "signature": "public getContentTypes() : array"
+        },
+        "getLang": {
+          "category": "api",
+          "description": "Fetches a page at the given URI with the specific language",
+          "http_method": "GET",
+          "params": [
+            {
+              "default": null,
+              "description": "The URI of the page",
+              "name": "uri",
+              "required": true,
+              "type": "string"
+            },
+            {
+              "default": null,
+              "description": "The language of the page",
+              "name": "lang",
+              "required": true,
+              "type": "string"
+            }
+          ],
+          "return_description": "An stdClass object representing the CMS page, or false if none exist",
+          "return_type": "mixed",
+          "signature": "public getLang($uri, $lang) : mixed"
+        },
+        "getList": {
+          "category": "api",
+          "description": "Returns a list of pages for the current company",
+          "http_method": "GET",
+          "params": [
+            {
+              "default": "1",
+              "description": "The page number of results to fetch",
+              "name": "page",
+              "required": false,
+              "type": "int"
+            },
+            {
+              "default": "['uri' => 'desc']",
+              "description": "A key/value pair array of fields to order the results by",
+              "name": "order",
+              "required": false,
+              "type": "array"
+            }
+          ],
+          "return_description": "An stdClass array of objects representing CMS pages for the given company",
+          "return_type": "array",
+          "signature": "public getList($page = 1, array $order = ['uri' => 'desc']) : array"
+        },
+        "getListCount": {
+          "category": "api",
+          "description": "Returns the total number of pages for the current company",
+          "http_method": "GET",
+          "params": [],
+          "return_description": "The total number of CMS pages for the current company",
+          "return_type": "int",
+          "signature": "public getListCount() : int"
+        },
+        "validateUnique": {
+          "category": "internal",
+          "description": "Retrieves a list of input rules for adding a CMS page",
+          "http_method": null,
+          "params": [
+            {
+              "default": null,
+              "description": "",
+              "name": "uri",
+              "required": true,
+              "type": ""
+            },
+            {
+              "default": null,
+              "description": "",
+              "name": "lang",
+              "required": true,
+              "type": ""
+            }
+          ],
+          "return_description": "A list of input rules / private function getRules(array $vars, $edit = false) { $rules = [ 'uri' => [ 'empty' => [ 'rule' => 'isEmpty', 'negate' => true, 'message' => $this->_('CmsPages.!error.uri.empty') ], 'exists' => [ 'rule' => [[$this, 'validateUnique'], $vars['lang']], 'message' => $this->_('CmsPages.!error.uri.exists') ] ], 'company_id' => [ 'exists' => [ 'rule' => [[$this, 'validateExists'], 'id', 'companies'], 'message' => $this->_('CmsPages.!error.company_id.exists') ] ], 'title' => [ 'empty' => [ 'rule' => 'isEmpty', 'negate' => true, 'message' => $this->_('CmsPages.!error.title.empty') ] ], 'content' => [ 'valid' => [ 'rule' => function ($content) { $parser_options_text = Configure::get('Blesta.parser_options'); try { H2o::parseString($content, $parser_options_text)->render(); } catch (H2o_Error $e) { $this->parse_error = $e->getMessage(); return false; } catch (Exception $e) { // Don't care about any other exception } return true; }, 'message' => $this->_('CmsPages.!error.content.valid', ''), 'final' => true ] ], 'content_type' => [ 'valid' => [ 'rule' => ['in_array', array_keys($this->getContentTypes())], 'message' => $this->_('CmsPages.!error.content_type.valid') ] ] ]; if ($edit) { unset($rules['uri']['exists']); } return $rules; } /** Sets the parse error in the set of errors / private function setParseError() { // Ensure we have input errors, otherwise there is nothing to overwrite if (($errors = $this->Input->errors()) === false) { return; } if (isset($errors['content']['valid'])) { $errors['content']['valid'] = $this->_('CmsPages.!error.content.valid', $this->parse_error); } $this->Input->setErrors($errors); } /** Validates if the given URI and Lang combination is unique (does not exist in the database)",
+          "return_type": "array",
+          "signature": "public validateUnique($uri, $lang) : array"
+        }
+      },
+      "pagination": {
+        "getList": "getListCount"
+      },
+      "source": "https://github.com/blesta/plugin-cms/blob/master/models/cms_pages.php"
+    },
+    "domains.domains_domains": {
+      "methods": {
+        "checkAvailability": {
+          "category": "api",
+          "description": "Checks if a domain is available for registration",
+          "http_method": "GET",
+          "params": [
+            {
+              "default": null,
+              "description": "The domain name to check",
+              "name": "domain",
+              "required": true,
+              "type": "string"
+            }
+          ],
+          "return_description": "True if the domain is available for registration",
+          "return_type": "bool",
+          "signature": "public checkAvailability($domain) : bool"
+        },
+        "checkTransferAvailability": {
+          "category": "api",
+          "description": "Checks if a domain is available for transfer",
+          "http_method": "GET",
+          "params": [
+            {
+              "default": null,
+              "description": "The domain name to check",
+              "name": "domain",
+              "required": true,
+              "type": "string"
+            }
+          ],
+          "return_description": "True if the domain is available for transfer",
+          "return_type": "bool",
+          "signature": "public checkTransferAvailability($domain) : bool"
+        },
+        "getAll": {
+          "category": "api",
+          "description": "Domain Manager TLDs Management Model",
+          "http_method": "GET",
+          "params": [
+            {
+              "default": "[]",
+              "description": "A list of filters for the query",
+              "fields": [
+                {
+                  "description": "The client ID (optional)",
+                  "name": "client_id"
+                },
+                {
+                  "description": "The ID of the company for which this domain is available (optional)",
+                  "name": "company_id"
+                },
+                {
+                  "description": "The pricing term by which to exclude results (optional)",
+                  "name": "excluded_pricing_term"
+                },
+                {
+                  "description": "The module ID on which to filter packages (optional)",
+                  "name": "module_id"
+                },
+                {
+                  "description": "The pricing period for which to fetch services (optional)",
+                  "name": "pricing_period"
+                },
+                {
+                  "description": "The package ID (optional)",
+                  "name": "package_id"
+                },
+                {
+                  "description": "The (partial) name of the packages for which to fetch services (optional)",
+                  "name": "package_name"
+                },
+                {
+                  "description": "The (partial) value of meta data on which to filter services (optional)",
+                  "name": "service_meta"
+                },
+                {
+                  "description": "The status type of the services to fetch (optional, default 'active'):",
+                  "name": "status"
+                },
+                {
+                  "description": "All active services",
+                  "name": "active"
+                },
+                {
+                  "description": "All canceled services",
+                  "name": "canceled"
+                },
+                {
+                  "description": "All pending services",
+                  "name": "pending"
+                },
+                {
+                  "description": "All suspended services",
+                  "name": "suspended"
+                },
+                {
+                  "description": "All services that require manual review before they may become pending",
+                  "name": "in_review"
+                },
+                {
+                  "description": "All services scheduled to be canceled",
+                  "name": "scheduled_cancellation"
+                },
+                {
+                  "description": "All active/canceled/pending/suspended/in_review",
+                  "name": "all"
+                }
+              ],
+              "name": "filters",
+              "required": false,
+              "type": "array"
+            },
+            {
+              "default": "['id' => 'asc']",
+              "description": "A key/value pair array of fields to order the results by",
+              "name": "order",
+              "required": false,
+              "type": "array"
+            },
+            {
+              "default": "[]",
+              "description": "",
+              "name": "formatted_filters",
+              "required": false,
+              "type": "array"
+            }
+          ],
+          "return_description": "An array of stdClass objects",
+          "return_type": "array",
+          "signature": "public getAll(array $filters = [], array $order = ['id' => 'asc'], array $formatted_filters = []) : array"
+        },
+        "getExpirationDate": {
+          "category": "api",
+          "description": "Gets the domain expiration date",
+          "http_method": "GET",
+          "params": [
+            {
+              "default": null,
+              "description": "The id of the service where the domain belongs",
+              "name": "service_id",
+              "required": true,
+              "type": "int"
+            },
+            {
+              "default": "'Y-m-d H:i:s'",
+              "description": "The format to return the expiration date in",
+              "name": "format",
+              "required": false,
+              "type": "string"
+            }
+          ],
+          "return_description": "The domain expiration date in UTC time in the given format",
+          "return_type": "string",
+          "signature": "public getExpirationDate($service_id, $format = 'Y-m-d H:i:s') : string"
+        },
+        "getList": {
+          "category": "api",
+          "description": "Returns a list of Domains for the given company",
+          "http_method": "GET",
+          "params": [
+            {
+              "default": "[]",
+              "description": "A list of filters for the query",
+              "fields": [
+                {
+                  "description": "The client ID (optional)",
+                  "name": "client_id"
+                },
+                {
+                  "description": "The ID of the company for which this domain is available (optional)",
+                  "name": "company_id"
+                },
+                {
+                  "description": "The pricing term by which to exclude results (optional)",
+                  "name": "excluded_pricing_term"
+                },
+                {
+                  "description": "The module ID on which to filter packages (optional)",
+                  "name": "module_id"
+                },
+                {
+                  "description": "The pricing period for which to fetch services (optional)",
+                  "name": "pricing_period"
+                },
+                {
+                  "description": "The package ID (optional)",
+                  "name": "package_id"
+                },
+                {
+                  "description": "The (partial) name of the packages for which to fetch services (optional)",
+                  "name": "package_name"
+                },
+                {
+                  "description": "The (partial) value of meta data on which to filter services (optional)",
+                  "name": "service_meta"
+                },
+                {
+                  "description": "The status type of the services to fetch (optional, default 'active'):",
+                  "name": "status"
+                },
+                {
+                  "description": "All active services",
+                  "name": "active"
+                },
+                {
+                  "description": "All canceled services",
+                  "name": "canceled"
+                },
+                {
+                  "description": "All pending services",
+                  "name": "pending"
+                },
+                {
+                  "description": "All suspended services",
+                  "name": "suspended"
+                },
+                {
+                  "description": "All services that require manual review before they may become pending",
+                  "name": "in_review"
+                },
+                {
+                  "description": "All services scheduled to be canceled",
+                  "name": "scheduled_cancellation"
+                },
+                {
+                  "description": "All active/canceled/pending/suspended/in_review",
+                  "name": "all"
+                }
+              ],
+              "name": "filters",
+              "required": false,
+              "type": "array"
+            },
+            {
+              "default": "1",
+              "description": "The page number of results to fetch",
+              "name": "page",
+              "required": false,
+              "type": "int"
+            },
+            {
+              "default": "['order' => 'asc']",
+              "description": "A key/value pair array of fields to order the results by",
+              "name": "order",
+              "required": false,
+              "type": "array"
+            }
+          ],
+          "return_description": "An array of stdClass objects",
+          "return_type": "array",
+          "signature": "public getList(array $filters = [], $page = 1, array $order = ['order' => 'asc']) : array"
+        },
+        "getListCount": {
+          "category": "api",
+          "description": "Returns the total number of Domains for the given filters",
+          "http_method": "GET",
+          "params": [
+            {
+              "default": "[]",
+              "description": "A list of filters for the query",
+              "fields": [
+                {
+                  "description": "The client ID (optional)",
+                  "name": "client_id"
+                },
+                {
+                  "description": "The ID of the company for which this domain is available (optional)",
+                  "name": "company_id"
+                },
+                {
+                  "description": "The pricing term by which to exclude results (optional)",
+                  "name": "excluded_pricing_term"
+                },
+                {
+                  "description": "The module ID on which to filter packages (optional)",
+                  "name": "module_id"
+                },
+                {
+                  "description": "The pricing period for which to fetch services (optional)",
+                  "name": "pricing_period"
+                },
+                {
+                  "description": "The package ID (optional)",
+                  "name": "package_id"
+                },
+                {
+                  "description": "The (partial) name of the packages for which to fetch services (optional)",
+                  "name": "package_name"
+                },
+                {
+                  "description": "The (partial) value of meta data on which to filter services (optional)",
+                  "name": "service_meta"
+                },
+                {
+                  "description": "The status type of the services to fetch (optional, default 'active'):",
+                  "name": "status"
+                },
+                {
+                  "description": "All active services",
+                  "name": "active"
+                },
+                {
+                  "description": "All canceled services",
+                  "name": "canceled"
+                },
+                {
+                  "description": "All pending services",
+                  "name": "pending"
+                },
+                {
+                  "description": "All suspended services",
+                  "name": "suspended"
+                },
+                {
+                  "description": "All services that require manual review before they may become pending",
+                  "name": "in_review"
+                },
+                {
+                  "description": "All services scheduled to be canceled",
+                  "name": "scheduled_cancellation"
+                },
+                {
+                  "description": "All active/canceled/pending/suspended/in_review",
+                  "name": "all"
+                }
+              ],
+              "name": "filters",
+              "required": false,
+              "type": "array"
+            }
+          ],
+          "return_description": "The total number of TLDs for the given filters",
+          "return_type": "int",
+          "signature": "public getListCount(array $filters = []) : int"
+        },
+        "getNameservers": {
+          "category": "api",
+          "description": "Get the nameservers for a given domain name",
+          "http_method": "GET",
+          "params": [
+            {
+              "default": null,
+              "description": "The id of the service to which the domain belongs",
+              "name": "service_id",
+              "required": true,
+              "type": "int"
+            }
+          ],
+          "return_description": "",
+          "return_type": "",
+          "signature": "public getNameservers($service_id)"
+        },
+        "getRegistrationDate": {
+          "category": "api",
+          "description": "Gets the domain registration date",
+          "http_method": "GET",
+          "params": [
+            {
+              "default": null,
+              "description": "The id of the service where the domain belongs",
+              "name": "service_id",
+              "required": true,
+              "type": "int"
+            },
+            {
+              "default": "'Y-m-d H:i:s'",
+              "description": "The format to return the registration date in",
+              "name": "format",
+              "required": false,
+              "type": "string"
+            }
+          ],
+          "return_description": "The domain registration date in UTC time in the given format",
+          "return_type": "string",
+          "signature": "public getRegistrationDate($service_id, $format = 'Y-m-d H:i:s') : string"
+        },
+        "getStatusCount": {
+          "category": "api",
+          "description": "Returns the number of results available for the given status",
+          "http_method": "GET",
+          "params": [
+            {
+              "default": "'active'",
+              "description": "The status value to select a count of ('active', 'canceled', 'pending', 'suspended')",
+              "name": "status",
+              "required": false,
+              "type": "string"
+            },
+            {
+              "default": "[]",
+              "description": "A list of parameters to filter by, including:",
+              "fields": [
+                {
+                  "description": "The client ID (optional)",
+                  "name": "client_id"
+                },
+                {
+                  "description": "The pricing term by which to exclude results (optional)",
+                  "name": "excluded_pricing_term"
+                },
+                {
+                  "description": "The module ID on which to filter packages (optional)",
+                  "name": "module_id"
+                },
+                {
+                  "description": "The pricing period for which to fetch services (optional)",
+                  "name": "pricing_period"
+                },
+                {
+                  "description": "The package ID (optional)",
+                  "name": "package_id"
+                },
+                {
+                  "description": "The (partial) name of the packages for which to fetch services (optional)",
+                  "name": "package_name"
+                },
+                {
+                  "description": "The (partial) value of meta data on which to filter services (optional)",
+                  "name": "service_meta"
+                },
+                {
+                  "description": "The status type of the services to fetch (optional, default 'active'):",
+                  "name": "status"
+                },
+                {
+                  "description": "All active services",
+                  "name": "active"
+                },
+                {
+                  "description": "All canceled services",
+                  "name": "canceled"
+                },
+                {
+                  "description": "All pending services",
+                  "name": "pending"
+                },
+                {
+                  "description": "All suspended services",
+                  "name": "suspended"
+                },
+                {
+                  "description": "All services that require manual review before they may become pending",
+                  "name": "in_review"
+                },
+                {
+                  "description": "All services scheduled to be canceled",
+                  "name": "scheduled_cancellation"
+                },
+                {
+                  "description": "All active/canceled/pending/suspended/in_review",
+                  "name": "all"
+                },
+                {
+                  "description": "The type of the services, it can be 'services', 'domains' or null for all (optional, default null)",
+                  "name": "type"
+                }
+              ],
+              "name": "filters",
+              "required": false,
+              "type": "array"
+            }
+          ],
+          "return_description": "The number representing the total number of services for this client with that status",
+          "return_type": "int",
+          "signature": "public getStatusCount($status = 'active', array $filters = []) : int"
+        },
+        "isManagedDomain": {
+          "category": "internal",
+          "description": "Checks if the given service is a domain managed by the domain manager",
+          "http_method": null,
+          "params": [
+            {
+              "default": null,
+              "description": "The ID of the service to evaluate",
+              "name": "service_id",
+              "required": true,
+              "type": "int"
+            }
+          ],
+          "return_description": "True if the service is a managed domain, false otherwise",
+          "return_type": "bool",
+          "signature": "public isManagedDomain($service_id) : bool"
+        },
+        "renewDomain": {
+          "category": "api",
+          "description": "Renews a domain name",
+          "http_method": "PUT",
+          "params": [
+            {
+              "default": null,
+              "description": "The id of the service where the domain belongs",
+              "name": "service_id",
+              "required": true,
+              "type": "int"
+            },
+            {
+              "default": "1",
+              "description": "The number of years to renew the domain",
+              "name": "years",
+              "required": false,
+              "type": "int"
+            }
+          ],
+          "return_description": "The ID of the invoice for the domain to be renewed",
+          "return_type": "int",
+          "signature": "public renewDomain($service_id, $years = 1) : int"
+        },
+        "setExpirationDate": {
+          "category": "api",
+          "description": "Sets the expiration date of a given domain",
+          "http_method": "PUT",
+          "params": [
+            {
+              "default": null,
+              "description": "The ID of the service belonging to the domain",
+              "name": "service_id",
+              "required": true,
+              "type": "int"
+            },
+            {
+              "default": null,
+              "description": "The expiration date of the domain",
+              "name": "expiration_date",
+              "required": true,
+              "type": "string"
+            }
+          ],
+          "return_description": "",
+          "return_type": "",
+          "signature": "public setExpirationDate($service_id, $expiration_date)"
+        },
+        "setRegistrationDate": {
+          "category": "api",
+          "description": "Sets the registration date of a given domain",
+          "http_method": "PUT",
+          "params": [
+            {
+              "default": null,
+              "description": "The ID of the service belonging to the domain",
+              "name": "service_id",
+              "required": true,
+              "type": "int"
+            },
+            {
+              "default": null,
+              "description": "The registration date of the domain",
+              "name": "registration_date",
+              "required": true,
+              "type": "string"
+            }
+          ],
+          "return_description": "",
+          "return_type": "",
+          "signature": "public setRegistrationDate($service_id, $registration_date)"
+        },
+        "updateNameservers": {
+          "category": "api",
+          "description": "Updates the nameservers of a given domain name",
+          "http_method": "PUT",
+          "params": [
+            {
+              "default": null,
+              "description": "The id of the service where the domain belongs",
+              "name": "service_id",
+              "required": true,
+              "type": "int"
+            },
+            {
+              "default": null,
+              "description": "A list of name servers to assign (e.g. [ns1, ns2])",
+              "name": "nameservers",
+              "required": true,
+              "type": "array"
+            }
+          ],
+          "return_description": "",
+          "return_type": "",
+          "signature": "public updateNameservers($service_id, array $nameservers)"
+        },
+        "updateRegistrar": {
+          "category": "api",
+          "description": "Updates the registrar for an existing domain",
+          "http_method": "PUT",
+          "params": [
+            {
+              "default": null,
+              "description": "The ID of the service associated to the domain",
+              "name": "service_id",
+              "required": true,
+              "type": "int"
+            },
+            {
+              "default": null,
+              "description": "The ID of the module of the new registrar",
+              "name": "module_id",
+              "required": true,
+              "type": "int"
+            }
+          ],
+          "return_description": "The ID of the service, void on error",
+          "return_type": "int",
+          "signature": "public updateRegistrar($service_id, $module_id) : int"
+        }
+      },
+      "pagination": {
+        "getList": "getListCount"
+      },
+      "source": "https://github.com/blesta/plugin-domains/blob/master/models/domains_domains.php"
+    },
+    "domains.domains_tlds": {
+      "methods": {
+        "add": {
+          "category": "api",
+          "description": "Add a TLD",
+          "http_method": "POST",
+          "params": [
+            {
+              "default": null,
+              "description": "An array of input data including:",
+              "fields": [
+                {
+                  "description": "The TLD to add",
+                  "name": "tld"
+                },
+                {
+                  "description": "A numerically indexed array, containing the nameservers for the given TLD",
+                  "name": "ns"
+                },
+                {
+                  "description": "The ID of the company for which this TLD is available (optional)",
+                  "name": "company_id"
+                },
+                {
+                  "description": "The ID of the package to be used for pricing and sale of this TLD (optional)",
+                  "name": "package_id"
+                },
+                {
+                  "description": "The ID of the TLDs package group (optional)",
+                  "name": "package_group_id"
+                },
+                {
+                  "description": "The ID of the registrar module to be used for this TLD",
+                  "name": "module_id"
+                },
+                {
+                  "description": "Whether to include DNS management for this TLD",
+                  "name": "dns_management"
+                },
+                {
+                  "description": "Whether to include email forwarding for this TLD",
+                  "name": "email_forwarding"
+                },
+                {
+                  "description": "Whether to include ID protection for this TLD",
+                  "name": "id_protection"
+                },
+                {
+                  "description": "Whether to include EPP Code for this TLD",
+                  "name": "epp_code"
+                }
+              ],
+              "name": "vars",
+              "required": true,
+              "type": "array"
+            }
+          ],
+          "return_description": "An array containing the TLD",
+          "return_type": "array",
+          "signature": "public add(array $vars) : array"
+        },
+        "addPackage": {
+          "category": "api",
+          "description": "Adds a package to a given tld",
+          "http_method": "POST",
+          "params": [
+            {
+              "default": null,
+              "description": "An array of input data including:",
+              "fields": [
+                {
+                  "description": "The TLD to add (opional)",
+                  "name": "tld"
+                },
+                {
+                  "description": "The id of the TLD to add (required if 'tld' is not submitted)",
+                  "name": "tld_id"
+                },
+                {
+                  "description": "The ID of the package to add",
+                  "name": "package_id"
+                }
+              ],
+              "name": "vars",
+              "required": true,
+              "type": "array"
+            }
+          ],
+          "return_description": "",
+          "return_type": "",
+          "signature": "public addPackage($vars)"
+        },
+        "assignClientPackage": {
+          "category": "api",
+          "description": "Assigns a TLD package to a client, for unrestricted access",
+          "http_method": "PUT",
+          "params": [
+            {
+              "default": null,
+              "description": "The ID of the client",
+              "name": "client_id",
+              "required": true,
+              "type": "int"
+            },
+            {
+              "default": null,
+              "description": "The ID of the restricted package for a TLD",
+              "name": "package_id",
+              "required": true,
+              "type": "int"
+            }
+          ],
+          "return_description": "",
+          "return_type": "",
+          "signature": "public assignClientPackage($client_id, $package_id)"
+        },
+        "delete": {
+          "category": "api",
+          "description": "Permanently deletes the given TLD",
+          "http_method": "DELETE",
+          "params": [
+            {
+              "default": null,
+              "description": "The identifier of the TLD to delete",
+              "name": "tld",
+              "required": true,
+              "type": "string"
+            },
+            {
+              "default": "null",
+              "description": "The ID of the company for which to filter by",
+              "name": "company_id",
+              "required": false,
+              "type": "int"
+            }
+          ],
+          "return_description": "",
+          "return_type": "",
+          "signature": "public delete($tld, $company_id = null)"
+        },
+        "deletePackages": {
+          "category": "api",
+          "description": "Permanently deletes packages for the given TLD.  NOTE: this triggers an event that will delete the tld itself",
+          "http_method": "DELETE",
+          "params": [
+            {
+              "default": null,
+              "description": "The identifier of the TLD to delete",
+              "name": "tld",
+              "required": true,
+              "type": "string"
+            },
+            {
+              "default": "null",
+              "description": "The ID of the company for which to filter by",
+              "name": "company_id",
+              "required": false,
+              "type": "int"
+            }
+          ],
+          "return_description": "",
+          "return_type": "",
+          "signature": "public deletePackages($tld, $company_id = null)"
+        },
+        "disable": {
+          "category": "api",
+          "description": "Disables the given TLD",
+          "http_method": "PUT",
+          "params": [
+            {
+              "default": null,
+              "description": "The identifier of the TLD to disable",
+              "name": "tld",
+              "required": true,
+              "type": "string"
+            },
+            {
+              "default": "null",
+              "description": "The ID of the company for which to filter by",
+              "name": "company_id",
+              "required": false,
+              "type": "int"
+            }
+          ],
+          "return_description": "",
+          "return_type": "",
+          "signature": "public disable($tld, $company_id = null)"
+        },
+        "duplicate": {
+          "category": "api",
+          "description": "Duplicates the existing TLD in to a new module",
+          "http_method": "POST",
+          "params": [
+            {
+              "default": null,
+              "description": "The TLD to migrate",
+              "name": "tld",
+              "required": true,
+              "type": "string"
+            },
+            {
+              "default": null,
+              "description": "The ID of the new module for the TLD",
+              "name": "module_id",
+              "required": true,
+              "type": "int"
+            },
+            {
+              "default": "null",
+              "description": "The ID of the company for which to filter by (optional)",
+              "name": "company_id",
+              "required": false,
+              "type": "int"
+            }
+          ],
+          "return_description": "The ID of the new package for the TLD",
+          "return_type": "int",
+          "signature": "public duplicate($tld, $module_id, $company_id = null) : int"
+        },
+        "edit": {
+          "category": "api",
+          "description": "Creates a package for a given TLD",
+          "http_method": "PUT",
+          "params": [
+            {
+              "default": null,
+              "description": "The identifier of the TLD to edit",
+              "name": "tld",
+              "required": true,
+              "type": "string"
+            },
+            {
+              "default": null,
+              "description": "An array of input data including: fields, to the module when adding the package (optional)",
+              "fields": [
+                {
+                  "description": "The ID of the company for which this TLD is available (optional)",
+                  "name": "company_id"
+                },
+                {
+                  "description": "The ID of the package to be used for pricing and sale of this TLD",
+                  "name": "package_id"
+                },
+                {
+                  "description": "Whether to include DNS management for this TLD",
+                  "name": "dns_management"
+                },
+                {
+                  "description": "Whether to include email forwarding for this TLD",
+                  "name": "email_forwarding"
+                },
+                {
+                  "description": "Whether to include ID protection for this TLD",
+                  "name": "id_protection"
+                },
+                {
+                  "description": "Whether to include EPP Code for this TLD",
+                  "name": "epp_code"
+                },
+                {
+                  "description": "The ID of the module this package belongs to (optional, default NULL)",
+                  "name": "module_id"
+                },
+                {
+                  "description": "The module row this package belongs to (optional, default NULL)",
+                  "name": "module_row"
+                },
+                {
+                  "description": "The module group this package belongs to (optional, default NULL)",
+                  "name": "module_group"
+                },
+                {
+                  "description": "Whether or not this package is taxable (optional, default 0)",
+                  "name": "taxable"
+                },
+                {
+                  "description": "A numerically indexed array of email content including:",
+                  "name": "email_content"
+                },
+                {
+                  "description": "The language of the email content",
+                  "name": "lang"
+                },
+                {
+                  "description": "The html content for the email (optional)",
+                  "name": "html"
+                },
+                {
+                  "description": "The text content for the email, will be created automatically from html if not given (optional)",
+                  "name": "text"
+                },
+                {
+                  "description": "A numerically indexed array of package option group assignments (optional)",
+                  "name": "option_groups"
+                },
+                {
+                  "description": "A set of miscellaneous fields to pass, in addition to the above",
+                  "name": "meta"
+                }
+              ],
+              "name": "vars",
+              "required": true,
+              "type": "array"
+            }
+          ],
+          "return_description": "The ID of the TLD package / private function createPackage(array $vars) { Loader::loadModels($this, ['ModuleManager', 'Currencies', 'Languages', 'Companies']); Loader::loadHelpers($this, ['Form']); // Set company id if (!isset($vars['company_id'])) { $vars['company_id'] = Configure::get('Blesta.company_id'); } // Set package group id if (!isset($vars['package_group_id'])) { $domains_package_group = $this->Companies->getSetting( $vars['company_id'], 'domains_package_group' ); $vars['package_group_id'] = $domains_package_group->value ?? null; } // Get company settings $company_settings = $this->Form->collapseObjectArray( $this->Companies->getSettings($vars['company_id']), 'value', 'key' ); // Fetch company default currency $default_currency = $company_settings['default_currency'] ?? 'USD'; // Fetch all company languages $languages = $this->Languages->getAll($vars['company_id']); // Create package $package_params = [ 'module_id' => $vars['module_id'], 'taxable' => $company_settings['domains_taxable'] ?? 0, 'names' => [], 'descriptions' => [], 'hidden' => '1', 'status' => $vars['status'] ?? 'inactive', 'company_id' => $vars['company_id'], 'pricing' => [ ['term' => 1, 'period' => 'year', 'currency' => $default_currency] ], 'groups' => [$vars['package_group_id']], 'override_price' => $company_settings['domains_override_price'] ?? 0, ]; // Fetch sample welcome email from the module $email_template = $this->ModuleManager->moduleRpc($vars['module_id'], 'getEmailTemplate'); // Add a package name and email content for each language foreach ($languages as $language) { $package_params['names'][] = [ 'lang' => $language->code, 'name' => $vars['tld'] ]; $package_params['email_content'][] = [ 'lang' => $language->code, 'html' => $email_template[$language->code]['html'] ?? ($email_template['en_us']['html'] ?? ''), 'text' => $email_template[$language->code]['text'] ?? ($email_template['en_us']['text'] ?? '') ]; } // Add the package for this TLD $package_id = $this->Packages->add($package_params); if (($errors = $this->Packages->errors())) { $this->Input->setErrors($errors); return; } // Set the default meta data to the new package $registrar = $this->ModuleManager->initModule($vars['module_id']); if (($vars['epp_code'] ?? '0') == '1' && !$registrar->supportsFeature('epp_code')) { $vars['epp_code'] = '0'; $this->Input->setErrors([ 'feature' => [ 'message' => Language::_('DomainsTlds.!error.feature.unsupported', true, 'epp_code') ] ]); } $meta_fields = [ ['key' => 'tlds', 'value' => serialize([$vars['tld']]), 'serialized' => '1'], ['key' => 'type', 'value' => 'domain', 'serialized' => '0'], ['key' => 'epp_code', 'value' => ($vars['epp_code'] ?? '0'), 'serialized' => '0'], ['key' => 'ns', 'value' => serialize($vars['ns'] ?? []), 'serialized' => '1'] ]; if ($package_id) { foreach ($meta_fields as $meta_field) { $meta_field['package_id'] = $package_id; $this->Record->duplicate('package_meta.value', '=', $meta_field['value']) ->insert('package_meta', $meta_field); } } // Set the default module row, if any $module = $this->ModuleManager->get($vars['module_id']); if (!empty($module->rows)) { $module_row = reset($module->rows); $this->Record->where('id', '=', $package_id) ->update('packages', ['module_row' => $module_row->id]); } return $package_id; } /** Edit a TLD",
+          "return_type": "int",
+          "signature": "public edit($tld, array $vars) : int"
+        },
+        "enable": {
+          "category": "api",
+          "description": "Enables the given TLD",
+          "http_method": "PUT",
+          "params": [
+            {
+              "default": null,
+              "description": "The identifier of the TLD to enable",
+              "name": "tld",
+              "required": true,
+              "type": "string"
+            },
+            {
+              "default": "null",
+              "description": "The ID of the company for which to filter by",
+              "name": "company_id",
+              "required": false,
+              "type": "int"
+            }
+          ],
+          "return_description": "",
+          "return_type": "",
+          "signature": "public enable($tld, $company_id = null)"
+        },
+        "get": {
+          "category": "api",
+          "description": "Fetches the given TLD",
+          "http_method": "GET",
+          "params": [
+            {
+              "default": null,
+              "description": "The TLD of the record to fetch",
+              "name": "tld",
+              "required": true,
+              "type": "string"
+            },
+            {
+              "default": "null",
+              "description": "The ID of the company for which to filter by",
+              "name": "company_id",
+              "required": false,
+              "type": "int"
+            }
+          ],
+          "return_description": "A stdClass object representing the TLD, false if no such record exists",
+          "return_type": "mixed",
+          "signature": "public get($tld, $company_id = null) : mixed"
+        },
+        "getAll": {
+          "category": "api",
+          "description": "Returns all TLDs in the system for the given filters",
+          "http_method": "GET",
+          "params": [
+            {
+              "default": "[]",
+              "description": "A list of filters for the query",
+              "fields": [
+                {
+                  "description": "The TLD",
+                  "name": "tld"
+                },
+                {
+                  "description": "A list of TLDs to fetch",
+                  "name": "tlds"
+                },
+                {
+                  "description": "The ID of the company for which this TLD is available",
+                  "name": "company_id"
+                },
+                {
+                  "description": "The package to be used for pricing and sale of this TLD",
+                  "name": "package_id"
+                },
+                {
+                  "description": "The status of the package to be used for pricing and sale of this TLD",
+                  "name": "status"
+                },
+                {
+                  "description": "The ID of the registrar module",
+                  "name": "module_id"
+                },
+                {
+                  "description": "Partial match for the TLD",
+                  "name": "search_tld"
+                }
+              ],
+              "name": "filters",
+              "required": false,
+              "type": "array"
+            },
+            {
+              "default": "['package_group.order' => 'asc']",
+              "description": "A key/value pair array of fields to order the results by",
+              "name": "order",
+              "required": false,
+              "type": "array"
+            }
+          ],
+          "return_description": "An array of stdClass objects",
+          "return_type": "array",
+          "signature": "public getAll(array $filters = [], array $order = ['package_group.order' => 'asc']) : array"
+        },
+        "getByPackage": {
+          "category": "api",
+          "description": "Fetches a TLD by the given package id",
+          "http_method": "GET",
+          "params": [
+            {
+              "default": null,
+              "description": "The Package ID belonging to the TLD to fetch",
+              "name": "package_id",
+              "required": true,
+              "type": "int"
+            },
+            {
+              "default": "null",
+              "description": "The ID of the company for which to filter by",
+              "name": "company_id",
+              "required": false,
+              "type": "int"
+            }
+          ],
+          "return_description": "A stdClass object representing the TLD, false if no such record exists",
+          "return_type": "mixed",
+          "signature": "public getByPackage($package_id, $company_id = null) : mixed"
+        },
+        "getDefaultTlds": {
+          "category": "api",
+          "description": "Returns a partial query",
+          "http_method": "GET",
+          "params": [],
+          "return_description": "A partially built query / private function getTlds(array $filters = []) { $this->Record->select(['domains_tlds.*', 'packages.module_id', 'package_group.order' => 'order'])-> from('domains_tlds')-> leftJoin('packages', 'packages.id', '=', 'domains_tlds.package_id', false)-> leftJoin('package_group', 'package_group.package_id', '=', 'domains_tlds.package_id', false); if (!empty($filters['tld'])) { $this->Record->where('domains_tlds.tld', '=', $filters['tld']); } if (!empty($filters['tlds'])) { $this->Record->where('domains_tlds.tld', 'in', $filters['tlds']); } if (!empty($filters['company_id'])) { $this->Record->where('domains_tlds.company_id', '=', $filters['company_id']); } if (!empty($filters['package_id'])) { $this->Record->where('domains_tlds.package_id', '=', $filters['package_id']); } if (!empty($filters['status'])) { $this->Record->where('packages.status', '=', $filters['status']); } if (!empty($filters['module_id'])) { $this->Record->where('packages.module_id', '=', $filters['module_id']); } if (!empty($filters['search_tld'])) { $this->Record->where('domains_tlds.tld', 'LIKE', '%' . $filters['search_tld'] . '%'); } $this->Record->group('package_group.package_id'); return $this->Record; } /** Gets a list TLDs to include with Blesta by default",
+          "return_type": "Record",
+          "signature": "public getDefaultTlds() : Record"
+        },
+        "getDomainsCompanySettings": {
+          "category": "api",
+          "description": "Returns the plugin company settings",
+          "http_method": "GET",
+          "params": [
+            {
+              "default": "null",
+              "description": "The ID of the company to fetch the plugin settings",
+              "name": "company_id",
+              "required": false,
+              "type": "int"
+            }
+          ],
+          "return_description": "An array containing all the Domains plugin company settings",
+          "return_type": "array",
+          "signature": "public getDomainsCompanySettings($company_id = null) : array"
+        },
+        "getDuplicateTldPackages": {
+          "category": "api",
+          "description": "Gets all packages for TLDs that have duplicates",
+          "http_method": "GET",
+          "params": [
+            {
+              "default": "null",
+              "description": "The ID of the company",
+              "name": "company_id",
+              "required": false,
+              "type": "int"
+            }
+          ],
+          "return_description": "An array of duplicate packages grouped by TLD",
+          "return_type": "array",
+          "signature": "public getDuplicateTldPackages($company_id = null) : array"
+        },
+        "getDuplicateTlds": {
+          "category": "api",
+          "description": "Gets all TLDs that have active packages other than the primary a TLD and module",
+          "http_method": "GET",
+          "params": [
+            {
+              "default": "null",
+              "description": "The ID of the company",
+              "name": "company_id",
+              "required": false,
+              "type": "int"
+            }
+          ],
+          "return_description": "An array of TLD names that have duplicate packages",
+          "return_type": "array",
+          "signature": "public getDuplicateTlds($company_id = null) : array"
+        },
+        "getFeatures": {
+          "category": "api",
+          "description": "Returns a list of the features supported by the domain manager",
+          "http_method": "GET",
+          "params": [],
+          "return_description": "A list of the supported features by the plugin",
+          "return_type": "array",
+          "signature": "public getFeatures() : array"
+        },
+        "getList": {
+          "category": "api",
+          "description": "Domain Manager TLDs Management Model",
+          "http_method": "GET",
+          "params": [
+            {
+              "default": "[]",
+              "description": "A list of filters for the query",
+              "fields": [
+                {
+                  "description": "The TLD",
+                  "name": "tld"
+                },
+                {
+                  "description": "A list of TLDs to fetch",
+                  "name": "tlds"
+                },
+                {
+                  "description": "The ID of the company for which this TLD is available",
+                  "name": "company_id"
+                },
+                {
+                  "description": "The package to be used for pricing and sale of this TLD",
+                  "name": "package_id"
+                },
+                {
+                  "description": "The status of the package to be used for pricing and sale of this TLD",
+                  "name": "status"
+                },
+                {
+                  "description": "The ID of the registrar module",
+                  "name": "module_id"
+                },
+                {
+                  "description": "Partial match for the TLD",
+                  "name": "search_tld"
+                }
+              ],
+              "name": "filters",
+              "required": false,
+              "type": "array"
+            },
+            {
+              "default": "1",
+              "description": "The page number of results to fetch",
+              "name": "page",
+              "required": false,
+              "type": "int"
+            },
+            {
+              "default": "['package_group.order' => 'asc']",
+              "description": "A key/value pair array of fields to order the results by",
+              "name": "order",
+              "required": false,
+              "type": "array"
+            }
+          ],
+          "return_description": "The modified TLD object / private function appendFeatures($tld) { Loader::loadModels($this, ['Companies']); Loader::loadHelpers($this, ['Form']); // Get company settings $company_settings = $this->Form->collapseObjectArray( $this->Companies->getSettings($tld->company_id), 'value', 'key' ); // Get all the option groups assigned to the package $package_option_groups = $this->Form->collapseObjectArray( $this->Record->select()->from('package_option')->where('package_id', '=', $tld->package_id)->fetchAll(), 'package_id', 'option_group_id' ); // Assign a feature if the TLD package is assigned the correct option_group foreach ($this->config_option_features as $feature) { $option_group_id = $company_settings['domains_' . $feature . '_option_group'] ?? null; $tld->{$feature} = (array_key_exists($option_group_id, $package_option_groups) ? '1' : '0'); } // Assign a feature if the TLD package is assigned the correct meta data foreach ($this->package_meta_features as $feature) { $meta_data = $this->Record->select()->from('package_meta') ->where('package_id', '=', $tld->package_id) ->where('key', '=', $feature) ->fetch(); $tld->{$feature} = $meta_data->value ?? '0'; } return $tld; } /** Returns a list of TLDs for the given company",
+          "return_type": "stdClass",
+          "signature": "public getList(array $filters = [], $page = 1, array $order = ['package_group.order' => 'asc']) : stdClass"
+        },
+        "getListCount": {
+          "category": "api",
+          "description": "Returns the total number of TLDs for the given filters",
+          "http_method": "GET",
+          "params": [
+            {
+              "default": "[]",
+              "description": "A list of filters for the query",
+              "fields": [
+                {
+                  "description": "The TLD",
+                  "name": "tld"
+                },
+                {
+                  "description": "A list of TLDs to fetch",
+                  "name": "tlds"
+                },
+                {
+                  "description": "The ID of the company for which this TLD is available",
+                  "name": "company_id"
+                },
+                {
+                  "description": "The package to be used for pricing and sale of this TLD",
+                  "name": "package_id"
+                },
+                {
+                  "description": "The status of the package to be used for pricing and sale of this TLD",
+                  "name": "status"
+                },
+                {
+                  "description": "The ID of the registrar module",
+                  "name": "module_id"
+                },
+                {
+                  "description": "Partial match for the TLD",
+                  "name": "search_tld"
+                }
+              ],
+              "name": "filters",
+              "required": false,
+              "type": "array"
+            }
+          ],
+          "return_description": "The total number of TLDs for the given filters",
+          "return_type": "int",
+          "signature": "public getListCount(array $filters = []) : int"
+        },
+        "getPricing": {
+          "category": "api",
+          "description": "Get the pricing of a TLD by term and currency",
+          "http_method": "GET",
+          "params": [
+            {
+              "default": null,
+              "description": "The ID of the package belonging ot the TLD",
+              "name": "package_id",
+              "required": true,
+              "type": "int"
+            },
+            {
+              "default": null,
+              "description": "The term of the pricing to look for",
+              "name": "term",
+              "required": true,
+              "type": "int"
+            },
+            {
+              "default": null,
+              "description": "The currency of the pricing to look for",
+              "name": "currency",
+              "required": true,
+              "type": "string"
+            }
+          ],
+          "return_description": "An object containing the pricing matching the given term and currency, void if a match could not be found",
+          "return_type": "stdClass",
+          "signature": "public getPricing($package_id, $term, $currency) : stdClass"
+        },
+        "getTldFields": {
+          "category": "api",
+          "description": "Assigns feature configurable options groups to the given package",
+          "http_method": "GET",
+          "params": [
+            {
+              "default": null,
+              "description": "The ID of the package to fetch the fields",
+              "name": "package_id",
+              "required": true,
+              "type": "int"
+            }
+          ],
+          "return_description": "An array containing the package fields, html, tags and email template",
+          "return_type": "array",
+          "signature": "public getTldFields($package_id) : array"
+        },
+        "getTldPackage": {
+          "category": "api",
+          "description": "Get all the packages assigned to a TLD.",
+          "http_method": "GET",
+          "params": [
+            {
+              "default": null,
+              "description": "The TLD to fetch the packages",
+              "name": "tld",
+              "required": true,
+              "type": "string"
+            },
+            {
+              "default": "null",
+              "description": "The ID of the company for which to filter by",
+              "name": "company_id",
+              "required": false,
+              "type": "int"
+            }
+          ],
+          "return_description": "An array of objects containing the assigned packages to the given tld",
+          "return_type": "mixed",
+          "signature": "public getTldPackage($tld, $company_id = null) : mixed"
+        },
+        "getTldPackageByModuleId": {
+          "category": "api",
+          "description": "Get the pricings of a TLD",
+          "http_method": "GET",
+          "params": [
+            {
+              "default": null,
+              "description": "The TLD for which the package will be looked up",
+              "name": "tld",
+              "required": true,
+              "type": "string"
+            },
+            {
+              "default": null,
+              "description": "The ID of the module the package should have",
+              "name": "module_id",
+              "required": true,
+              "type": "int"
+            },
+            {
+              "default": "null",
+              "description": "The ID of the company for which to filter by",
+              "name": "company_id",
+              "required": false,
+              "type": "int"
+            }
+          ],
+          "return_description": "A list of objects containing the pricing / private function getPricingsByTermCurrency($package_id) { // Get pricings $pricings = $this->Record->select('pricings.*') ->from('pricings') ->innerJoin('package_pricing', 'package_pricing.pricing_id', '=', 'pricings.id', false) ->where('package_pricing.package_id', '=', $package_id) ->where('pricings.period', '=', 'year') ->fetchAll(); // Organize pricings by currency and term $pricings_by_currency = []; foreach ($pricings as $pricing) { $pricings_by_currency[$pricing->currency][$pricing->term] = $pricing; } return $pricings_by_currency; } /** Validates if a package will require a module migration.",
+          "return_type": "array",
+          "signature": "public getTldPackageByModuleId($tld, $module_id, $company_id = null) : array"
+        },
+        "getTldPackages": {
+          "category": "api",
+          "description": "Get all the packages assigned to a TLD.",
+          "http_method": "GET",
+          "params": [
+            {
+              "default": null,
+              "description": "The TLD to fetch the packages",
+              "name": "tld",
+              "required": true,
+              "type": "string"
+            },
+            {
+              "default": "null",
+              "description": "The status of the packages to fetch, it can be \"active\", \"inactive\" or null (default, null)",
+              "name": "status",
+              "required": false,
+              "type": "string"
+            },
+            {
+              "default": "null",
+              "description": "The ID of the company for which to filter by",
+              "name": "company_id",
+              "required": false,
+              "type": "int"
+            }
+          ],
+          "return_description": "An array of objects containing the assigned packages to the given tld",
+          "return_type": "mixed",
+          "signature": "public getTldPackages($tld, $status = null, $company_id = null) : mixed"
+        },
+        "hasMultipleTldPackages": {
+          "category": "internal",
+          "description": "Check if there are multiple packages for the given TLD within the domains package group",
+          "http_method": null,
+          "params": [
+            {
+              "default": null,
+              "description": "The TLD to check",
+              "name": "tld",
+              "required": true,
+              "type": "string"
+            },
+            {
+              "default": null,
+              "description": "The current package ID to exclude from the check",
+              "name": "current_package_id",
+              "required": true,
+              "type": "int"
+            },
+            {
+              "default": "null",
+              "description": "The ID of the company for which to filter by",
+              "name": "company_id",
+              "required": false,
+              "type": "int"
+            }
+          ],
+          "return_description": "True if multiple packages exist for this TLD, false otherwise",
+          "return_type": "bool",
+          "signature": "public hasMultipleTldPackages($tld, $current_package_id, $company_id = null) : bool"
+        },
+        "import": {
+          "category": "api",
+          "description": "Imports the TLDs and their pricing from a registrar module, if available",
+          "http_method": "POST",
+          "params": [
+            {
+              "default": null,
+              "description": "A list containing the TLDs to import from the registrar module",
+              "name": "tlds",
+              "required": true,
+              "type": "array"
+            },
+            {
+              "default": null,
+              "description": "The ID of the registrar module",
+              "name": "module_id",
+              "required": true,
+              "type": "int"
+            },
+            {
+              "default": "null",
+              "description": "The ID of the company to import the TLDs",
+              "name": "company_id",
+              "required": false,
+              "type": "int"
+            },
+            {
+              "default": "[]",
+              "description": "A list of filters for the process",
+              "fields": [
+                {
+                  "description": "A list of terms to import for the TLD, if supported",
+                  "name": "terms"
+                }
+              ],
+              "name": "filters",
+              "required": false,
+              "type": "array"
+            }
+          ],
+          "return_description": "True if all the TLDs where imported successfully, false otherwise",
+          "return_type": "bool",
+          "signature": "public import(array $tlds, int $module_id, int $company_id = null, array $filters = []) : bool"
+        },
+        "sort": {
+          "category": "api",
+          "description": "Sort the TLDs",
+          "http_method": null,
+          "params": [
+            {
+              "default": "[]",
+              "description": "A key => value array, where the key is the order of the TLD and the value the ID of the package belonging to the TLD",
+              "name": "tlds",
+              "required": false,
+              "type": "array"
+            },
+            {
+              "default": "null",
+              "description": "",
+              "name": "company_id",
+              "required": false,
+              "type": ""
+            }
+          ],
+          "return_description": "",
+          "return_type": "",
+          "signature": "public sort(array $tlds = [], $company_id = null)"
+        },
+        "updateDomainsCompanySettings": {
+          "category": "api",
+          "description": "Updates the plugin company settings",
+          "http_method": "PUT",
+          "params": [
+            {
+              "default": null,
+              "description": "The ID of the company to fetch the plugin settings",
+              "name": "company_id",
+              "required": true,
+              "type": "int"
+            },
+            {
+              "default": null,
+              "description": "An array containing all the Domains plugin company settings",
+              "name": "settings",
+              "required": true,
+              "type": "array"
+            }
+          ],
+          "return_description": "",
+          "return_type": "",
+          "signature": "public updateDomainsCompanySettings($company_id, array $settings)"
+        },
+        "updateOverridePriceSetting": {
+          "category": "api",
+          "description": "Updates the taxation status of the TLD packages",
+          "http_method": "PUT",
+          "params": [
+            {
+              "default": null,
+              "description": "Whether or not to set override prices automatically on services created from this package",
+              "name": "override_prices",
+              "required": true,
+              "type": "int"
+            }
+          ],
+          "return_description": "",
+          "return_type": "",
+          "signature": "public updateOverridePriceSetting($override_prices)"
+        },
+        "updatePricings": {
+          "category": "api",
+          "description": "Updates the pricings of a TLD",
+          "http_method": "PUT",
+          "params": [
+            {
+              "default": null,
+              "description": "The identifier of the TLD to edit",
+              "name": "tld",
+              "required": true,
+              "type": "string"
+            },
+            {
+              "default": null,
+              "description": "A key => value array, where the key is the package pricing ID and the value the pricing row",
+              "name": "pricings",
+              "required": true,
+              "type": "array"
+            },
+            {
+              "default": "null",
+              "description": "The ID of the company for which to filter by",
+              "name": "company_id",
+              "required": false,
+              "type": "int"
+            },
+            {
+              "default": "[]",
+              "description": "A list of filters for the process",
+              "fields": [
+                {
+                  "description": "A list of terms to import for the TLD, if supported",
+                  "name": "terms"
+                }
+              ],
+              "name": "filters",
+              "required": false,
+              "type": "array"
+            },
+            {
+              "default": "false",
+              "description": "If true, update pricing for all packages matching this TLD",
+              "name": "update_all_packages",
+              "required": false,
+              "type": "bool"
+            }
+          ],
+          "return_description": "",
+          "return_type": "",
+          "signature": "public updatePricings($tld, array $pricings, $company_id = null, array $filters = [], $update_all_packages = false)"
+        },
+        "updateTax": {
+          "category": "api",
+          "description": "Updates the pricings for a single package",
+          "http_method": "PUT",
+          "params": [
+            {
+              "default": null,
+              "description": "Whether or not this package is taxable (optional, default 0)",
+              "name": "taxable",
+              "required": true,
+              "type": "int"
+            }
+          ],
+          "return_description": "The ID of the pricing, void on error / private function disablePricing($pricing_id) { Loader::loadModels($this, ['Packages', 'Pricings']); // Get package $package = $this->Record->select('packages.*') ->from('packages') ->innerJoin('package_pricing', 'package_pricing.package_id', '=', 'packages.id', false) ->where('package_pricing.pricing_id', '=', $pricing_id) ->fetch(); if (isset($package->id)) { $package = $this->Packages->get($package->id); } // Get pricing $pricing = $this->Pricings->get($pricing_id); // Check if is the last pricing of the package if (count($package->pricing) <= 1) { $this->Input->setErrors([ 'count' => [ 'message' => Language::_('DomainsTlds.!error.package_pricing.count', true) ] ]); return; } // Check if there are any services using this pricing $one_year_term = $this->getPricing($package->id, 1, $pricing->currency); $services_pricing = $this->Record->select('services.*') ->from('services') ->innerJoin('package_pricing', 'package_pricing.id', '=', 'services.pricing_id', false) ->where('package_pricing.pricing_id', '=', $pricing_id) ->fetchAll(); if (!empty($services_pricing) && $one_year_term !== $pricing_id) { // Migrate all pricing services to the 1 year pricing $pricing_package = $this->Record->select() ->from('package_pricing') ->where('package_pricing.pricing_id', '=', $one_year_term->id) ->fetch(); foreach ($services_pricing as $service) { if (isset($pricing_package->id)) { $this->Record->where('id', '=', $service->id) ->update('services', ['pricing_id' => $pricing_package->id]); } } } elseif (!empty($services_pricing) && $one_year_term == $pricing_id) { $this->Input->setErrors([ 'service' => [ 'message' => Language::_('DomainsTlds.!error.package_pricing.service', true) ] ]); return; } // Delete pricing $this->Record->from('pricings') ->where('pricings.id', '=', $pricing_id) ->delete(); $this->Record->from('package_pricing') ->where('package_pricing.pricing_id', '=', $pricing_id) ->delete(); return $pricing_id; } /** Updates an existing pricing",
+          "return_type": "int",
+          "signature": "public updateTax($taxable) : int"
+        },
+        "updateWelcomeEmail": {
+          "category": "api",
+          "description": "Updates the Welcome Email template for a given TLD",
+          "http_method": "PUT",
+          "params": [
+            {
+              "default": null,
+              "description": "The identifier of the TLD",
+              "name": "tld",
+              "required": true,
+              "type": "string"
+            },
+            {
+              "default": null,
+              "description": "An array of input data including:",
+              "fields": [
+                {
+                  "description": "The scope of the template update, it could be:",
+                  "name": "update_scope"
+                },
+                {
+                  "description": "Updates the welcome email for this TLD",
+                  "name": "tld"
+                },
+                {
+                  "description": "Updates the welcome email for all TLDs using this module",
+                  "name": "module"
+                },
+                {
+                  "description": "Updates the welcome email for all TLDs, regardless of the module",
+                  "name": "all"
+                },
+                {
+                  "description": "A numerically indexed array of email content including:",
+                  "name": "email_content"
+                },
+                {
+                  "description": "The language of the email content",
+                  "name": "lang"
+                },
+                {
+                  "description": "The html content for the email (optional)",
+                  "name": "html"
+                },
+                {
+                  "description": "The text content for the email, will be created automatically from html if not given (optional)",
+                  "name": "text"
+                }
+              ],
+              "name": "vars",
+              "required": true,
+              "type": "array"
+            },
+            {
+              "default": "null",
+              "description": "The ID of the company for which to filter by",
+              "name": "company_id",
+              "required": false,
+              "type": "int"
+            }
+          ],
+          "return_description": "",
+          "return_type": "void",
+          "signature": "public updateWelcomeEmail($tld, $vars, $company_id = null) : void"
+        }
+      },
+      "pagination": {
+        "getList": "getListCount"
+      },
+      "source": "https://github.com/blesta/plugin-domains/blob/master/models/domains_tlds.php"
+    },
+    "extension_generator.extension_generator_extensions": {
+      "methods": {
+        "add": {
+          "category": "api",
+          "description": "Add an extension",
+          "http_method": "POST",
+          "params": [
+            {
+              "default": null,
+              "description": "An array of input data including:",
+              "fields": [
+                {
+                  "description": "The ID of the company with which to associate the extension",
+                  "name": "company_id"
+                },
+                {
+                  "description": "The name of the extension",
+                  "name": "name"
+                },
+                {
+                  "description": "The type of the extension",
+                  "name": "type"
+                },
+                {
+                  "description": "The form type for creating/modifying the extension",
+                  "name": "form_type"
+                },
+                {
+                  "description": "Whether to include commented code exampled when generating the extension",
+                  "name": "code_examples"
+                },
+                {
+                  "description": "The save form data for the extension",
+                  "name": "data"
+                }
+              ],
+              "name": "vars",
+              "required": true,
+              "type": "array"
+            }
+          ],
+          "return_description": "The ID of the extension that was created, void on error",
+          "return_type": "int",
+          "signature": "public add(array $vars) : int"
+        },
+        "delete": {
+          "category": "api",
+          "description": "Permanently deletes the given extension",
+          "http_method": "DELETE",
+          "params": [
+            {
+              "default": null,
+              "description": "The ID of the extension to delete",
+              "name": "extension_id",
+              "required": true,
+              "type": "int"
+            }
+          ],
+          "return_description": "",
+          "return_type": "",
+          "signature": "public delete($extension_id)"
+        },
+        "edit": {
+          "category": "api",
+          "description": "Edit an extension",
+          "http_method": "PUT",
+          "params": [
+            {
+              "default": null,
+              "description": "The ID of the extension to edit",
+              "name": "extension_id",
+              "required": true,
+              "type": "int"
+            },
+            {
+              "default": null,
+              "description": "An array of input data including:",
+              "fields": [
+                {
+                  "description": "The ID of the company with which to associate the extension",
+                  "name": "company_id"
+                },
+                {
+                  "description": "The name of the extension",
+                  "name": "name"
+                },
+                {
+                  "description": "The type of the extension",
+                  "name": "type"
+                },
+                {
+                  "description": "The form type for creating/modifying the extension",
+                  "name": "form_type"
+                },
+                {
+                  "description": "Whether to include commented code exampled when generating the extension",
+                  "name": "code_examples"
+                },
+                {
+                  "description": "The save form data for the extension",
+                  "name": "data"
+                }
+              ],
+              "name": "vars",
+              "required": true,
+              "type": "array"
+            }
+          ],
+          "return_description": "The ID of the extension that was updated, void on error",
+          "return_type": "int",
+          "signature": "public edit($extension_id, array $vars) : int"
+        },
+        "get": {
+          "category": "api",
+          "description": "Fetches the extension with the given ID",
+          "http_method": "GET",
+          "params": [
+            {
+              "default": null,
+              "description": "The ID of the extension to fetch",
+              "name": "extension_id",
+              "required": true,
+              "type": "int"
+            }
+          ],
+          "return_description": "A stdClass object representing the extension, false if no such extension exists",
+          "return_type": "mixed",
+          "signature": "public get($extension_id) : mixed"
+        },
+        "getAll": {
+          "category": "api",
+          "description": "Returns all extensions in the system for the given company",
+          "http_method": "GET",
+          "params": [
+            {
+              "default": null,
+              "description": "The ID of the company to fetch extensions for",
+              "name": "company_id",
+              "required": true,
+              "type": "int"
+            },
+            {
+              "default": "['date_updated' => 'desc']",
+              "description": "A key/value pair array of fields to order the results by",
+              "name": "order",
+              "required": false,
+              "type": "array"
+            }
+          ],
+          "return_description": "An array of stdClass objects, each representing an extension",
+          "return_type": "array",
+          "signature": "public getAll($company_id, array $order = ['date_updated' => 'desc']) : array"
+        },
+        "getFormTypes": {
+          "category": "api",
+          "description": "Gets a list of form types and their languages",
+          "http_method": "GET",
+          "params": [],
+          "return_description": "list of form types and their languages",
+          "return_type": "A",
+          "signature": "public getFormTypes() : A"
+        },
+        "getList": {
+          "category": "api",
+          "description": "Extension Generator Extension Management",
+          "http_method": "GET",
+          "params": [
+            {
+              "default": null,
+              "description": "The ID of the company to fetch extensions from",
+              "name": "company_id",
+              "required": true,
+              "type": "int"
+            },
+            {
+              "default": "1",
+              "description": "The page number of results to fetch",
+              "name": "page",
+              "required": false,
+              "type": "int"
+            },
+            {
+              "default": "['date_updated' => 'desc']",
+              "description": "A key/value pair array of fields to order the results by",
+              "name": "order",
+              "required": false,
+              "type": "array"
+            }
+          ],
+          "return_description": "An array of stdClass objects, each representing an extension",
+          "return_type": "array",
+          "signature": "public getList($company_id, $page = 1, array $order = ['date_updated' => 'desc']) : array"
+        },
+        "getListCount": {
+          "category": "api",
+          "description": "Returns the total number of extension for the given company",
+          "http_method": "GET",
+          "params": [
+            {
+              "default": null,
+              "description": "The ID of the company to fetch extension count from",
+              "name": "company_id",
+              "required": true,
+              "type": "int"
+            }
+          ],
+          "return_description": "The total number of extensions for the given company",
+          "return_type": "int",
+          "signature": "public getListCount($company_id) : int"
+        },
+        "getTypes": {
+          "category": "api",
+          "description": "Returns a partial extension query",
+          "http_method": "GET",
+          "params": [],
+          "return_description": "A partially built extension query / private function getExtension(array $filters = []) { $this->Record->select()->from('extension_generator_extensions'); if (isset($filters['extension_id'])) { $this->Record->where('extension_generator_extensions.id', '=', $filters['extension_id']); } if (isset($filters['company_id'])) { $this->Record->where('extension_generator_extensions.company_id', '=', $filters['company_id']); } return $this->Record; } /** Gets a list of extension types and their languages",
+          "return_type": "Record",
+          "signature": "public getTypes() : Record"
+        }
+      },
+      "pagination": {
+        "getList": "getListCount"
+      },
+      "source": "https://github.com/blesta/plugin-extension_generator/blob/master/models/extension_generator_extensions.php"
+    },
+    "softaculous.softaculous_queued_services": {
+      "methods": {
+        "add": {
+          "category": "api",
+          "description": "Adds a queued service",
+          "http_method": "POST",
+          "params": [
+            {
+              "default": null,
+              "description": "A list of input vars including:",
+              "fields": [
+                {
+                  "description": "The ID service on which the script is to be run",
+                  "name": "service_id"
+                },
+                {
+                  "description": "The ID of the company to which the service belongs",
+                  "name": "company_id"
+                },
+                {
+                  "description": "The errors that caused this service to be queued",
+                  "name": "errors"
+                },
+                {
+                  "description": "The number of times the queued installation has been attempted",
+                  "name": "attempts"
+                }
+              ],
+              "name": "vars",
+              "required": true,
+              "type": "array"
+            }
+          ],
+          "return_description": "The stdClass object representing the newly-created queued script, or void on error",
+          "return_type": "stdClass",
+          "signature": "public add(array $vars) : stdClass"
+        },
+        "delete": {
+          "category": "api",
+          "description": "Attempts to remove a service from the queue",
+          "http_method": "DELETE",
+          "params": [
+            {
+              "default": null,
+              "description": "The ID of the service to remove from the queue",
+              "name": "service_id",
+              "required": true,
+              "type": "int"
+            }
+          ],
+          "return_description": "",
+          "return_type": "",
+          "signature": "public delete($service_id)"
+        },
+        "edit": {
+          "category": "api",
+          "description": "Edits a queued service",
+          "http_method": "PUT",
+          "params": [
+            {
+              "default": null,
+              "description": "The ID of the service for which to edit the queue",
+              "name": "service_id",
+              "required": true,
+              "type": "int"
+            },
+            {
+              "default": null,
+              "description": "A list of input vars including:",
+              "fields": [
+                {
+                  "description": "The ID of the company to which the service belongs",
+                  "name": "company_id"
+                },
+                {
+                  "description": "The errors that caused this service to be queued",
+                  "name": "errors"
+                },
+                {
+                  "description": "The number of times the queued installation has been attempted",
+                  "name": "attempts"
+                }
+              ],
+              "name": "vars",
+              "required": true,
+              "type": "array"
+            }
+          ],
+          "return_description": "The stdClass object representing the edited queued script, or void on error",
+          "return_type": "stdClass",
+          "signature": "public edit($service_id, array $vars) : stdClass"
+        },
+        "get": {
+          "category": "api",
+          "description": "Fetches queued service data",
+          "http_method": "GET",
+          "params": [
+            {
+              "default": null,
+              "description": "The ID of the service for which to fetch queued data",
+              "name": "service_id",
+              "required": true,
+              "type": "int"
+            }
+          ],
+          "return_description": "An stdClass object representing the service queue, or false if none exist",
+          "return_type": "mixed",
+          "signature": "public get($service_id) : mixed"
+        },
+        "getAll": {
+          "category": "api",
+          "description": "Fetches a list of all queued services",
+          "http_method": "GET",
+          "params": [
+            {
+              "default": null,
+              "description": "The ID of the company whose queued services to fetch",
+              "name": "company_id",
+              "required": true,
+              "type": "int"
+            }
+          ],
+          "return_description": "A list of stdClass objects, each representing a queued service",
+          "return_type": "array",
+          "signature": "public getAll($company_id) : array"
+        }
+      },
+      "source": "https://github.com/blesta/plugin-softaculous/blob/master/models/softaculous_queued_services.php"
+    },
+    "webhooks.webhooks_events": {
+      "methods": {
+        "getAll": {
+          "category": "api",
+          "description": "Returns a list of all available events",
+          "http_method": "GET",
+          "params": [],
+          "return_description": "A list of all events available in the system",
+          "return_type": "array",
+          "signature": "public getAll() : array"
+        },
+        "getMethods": {
+          "category": "internal",
+          "description": "Check if the list of installed plugins has changed since the last time we fetched observers",
+          "http_method": null,
+          "params": [
+            {
+              "default": null,
+              "description": "The instance of the Observable object or the name of the event",
+              "name": "observer",
+              "required": true,
+              "type": "mixed"
+            }
+          ],
+          "return_description": "True if the list of plugins have changed / private function pluginsHaveChanged() { // Check if the list of plugins has changed since last time $installed_plugins = Cache::fetchCache( 'installed_plugins', Configure::get('Blesta.company_id') . DS . 'plugins' . DS . 'webhooks' . DS ); $current_plugins = $this->Form->collapseObjectArray( $this->PluginManager->getAll(Configure::get('Blesta.company_id')), 'name', 'dir' ); if ($installed_plugins) { $installed_plugins = (array) unserialize(base64_decode($installed_plugins)); } else { $installed_plugins = $current_plugins; } if (Configure::get('Caching.on') && is_writable(CACHEDIR)) { Cache::writeCache( 'installed_plugins', base64_encode(serialize($current_plugins)), strtotime(Configure::get('Blesta.cache_length')) - time(), Configure::get('Blesta.company_id') . DS . 'plugins' . DS . 'webhooks' . DS ); } return $current_plugins != $installed_plugins; } /** Returns a list of all methods available for a specific observer",
+          "return_type": "bool",
+          "signature": "public getMethods($observer) : bool"
+        },
+        "getObservers": {
+          "category": "internal",
+          "description": "Returns a list of all observers available in the system.",
+          "http_method": null,
+          "params": [],
+          "return_description": "Returns an array of arrays, each one containing the class and file of the system observers",
+          "return_type": "array",
+          "signature": "public getObservers() : array"
+        },
+        "listen": {
+          "category": "api",
+          "description": "Listens to all events and triggers outgoing webhooks",
+          "http_method": null,
+          "params": [
+            {
+              "default": null,
+              "description": "The triggered event",
+              "name": "event",
+              "required": true,
+              "type": "EventInterface"
+            },
+            {
+              "default": "null",
+              "description": "The ID of the webhook used to trigger the event (optional)",
+              "name": "webhook_id",
+              "required": false,
+              "type": "int"
+            }
+          ],
+          "return_description": "",
+          "return_type": "",
+          "signature": "public listen(EventInterface $event, int $webhook_id = null)"
+        },
+        "trigger": {
+          "category": "api",
+          "description": "Triggers an event",
+          "http_method": "POST",
+          "params": [
+            {
+              "default": null,
+              "description": "The ID of the webhook to trigger the event",
+              "name": "webhook_id",
+              "required": true,
+              "type": "int"
+            },
+            {
+              "default": "[]",
+              "description": "An array of parameters to be held by this event (optional)",
+              "name": "params",
+              "required": false,
+              "type": "array"
+            },
+            {
+              "default": "null",
+              "description": "The events to be triggered by the incoming webhook (optional)",
+              "name": "events",
+              "required": false,
+              "type": "array"
+            }
+          ],
+          "return_description": "The list of parameters that were submitted along with any modifications made to them by the event handlers. In addition a __return__ item is included with the return array from the event.",
+          "return_type": "array",
+          "signature": "public trigger(int $webhook_id, array $params = [], array $events = null) : array"
+        }
+      },
+      "source": "https://github.com/blesta/plugin-webhooks/blob/master/models/webhooks_events.php"
+    },
+    "webhooks.webhooks_logs": {
+      "methods": {
+        "deleteLogs": {
+          "category": "api",
+          "description": "Deletes webhook logs older than the given date",
+          "http_method": "DELETE",
+          "params": [
+            {
+              "default": null,
+              "description": "The date before which to delete logs",
+              "name": "date",
+              "required": true,
+              "type": "string"
+            }
+          ],
+          "return_description": "The number of logs deleted",
+          "return_type": "int",
+          "signature": "public deleteLogs($date) : int"
+        },
+        "getAllLogs": {
+          "category": "api",
+          "description": "Fetch all logs across all webhooks",
+          "http_method": "GET",
+          "params": [
+            {
+              "default": "[]",
+              "description": "An array of filters including:",
+              "fields": [
+                {
+                  "description": "The ID of the webhook to filter by (optional)",
+                  "name": "webhook_id"
+                },
+                {
+                  "description": "The event name to filter by (optional)",
+                  "name": "event"
+                },
+                {
+                  "description": "The HTTP response code to filter by (optional)",
+                  "name": "http_response"
+                },
+                {
+                  "description": "The start date to filter by (optional)",
+                  "name": "date_start"
+                },
+                {
+                  "description": "The end date to filter by (optional)",
+                  "name": "date_end"
+                }
+              ],
+              "name": "filters",
+              "required": false,
+              "type": "array"
+            },
+            {
+              "default": "1",
+              "description": "The page to return results for (optional, default 1)",
+              "name": "page",
+              "required": false,
+              "type": "int"
+            },
+            {
+              "default": "['id' => 'DESC']",
+              "description": "The order by clause (optional, default ['id' => 'DESC'])",
+              "name": "order_by",
+              "required": false,
+              "type": "array"
+            }
+          ],
+          "return_description": "An array of objects, each one representing a logged request",
+          "return_type": "mixed",
+          "signature": "public getAllLogs($filters = [], $page = 1, $order_by = ['id' => 'DESC']) : mixed"
+        },
+        "getAllLogsCount": {
+          "category": "api",
+          "description": "Fetch the number of all logs available across all webhooks",
+          "http_method": "GET",
+          "params": [
+            {
+              "default": "[]",
+              "description": "An array of filters including:",
+              "fields": [
+                {
+                  "description": "The ID of the webhook to filter by (optional)",
+                  "name": "webhook_id"
+                },
+                {
+                  "description": "The event name to filter by (optional)",
+                  "name": "event"
+                },
+                {
+                  "description": "The HTTP response code to filter by (optional)",
+                  "name": "http_response"
+                },
+                {
+                  "description": "The start date to filter by (optional)",
+                  "name": "date_start"
+                },
+                {
+                  "description": "The end date to filter by (optional)",
+                  "name": "date_end"
+                }
+              ],
+              "name": "filters",
+              "required": false,
+              "type": "array"
+            }
+          ],
+          "return_description": "The number representing the total number of logs",
+          "return_type": "int",
+          "signature": "public getAllLogsCount($filters = []) : int"
+        },
+        "getLog": {
+          "category": "api",
+          "description": "Fetch a webhook log",
+          "http_method": "GET",
+          "params": [
+            {
+              "default": null,
+              "description": "The ID of the webhook to fetch the logs",
+              "name": "id",
+              "required": true,
+              "type": "int"
+            }
+          ],
+          "return_description": "An object representing a logged request",
+          "return_type": "mixed",
+          "signature": "public getLog(int $id) : mixed"
+        },
+        "getLogs": {
+          "category": "api",
+          "description": "Fetch the logs for a webhook",
+          "http_method": "GET",
+          "params": [
+            {
+              "default": null,
+              "description": "The ID of the webhook to fetch the logs",
+              "name": "webhook_id",
+              "required": true,
+              "type": "int"
+            },
+            {
+              "default": "1",
+              "description": "The page to return results for (optional, default 1)",
+              "name": "page",
+              "required": false,
+              "type": "int"
+            },
+            {
+              "default": "['id' => 'DESC']",
+              "description": "The order by clause (optional, default ['id' => 'DESC'])",
+              "name": "order_by",
+              "required": false,
+              "type": "array"
+            }
+          ],
+          "return_description": "An array of objects, each one representing a logged request",
+          "return_type": "mixed",
+          "signature": "public getLogs(int $webhook_id, $page = 1, $order_by = ['id' => 'DESC']) : mixed"
+        },
+        "getLogsCount": {
+          "category": "api",
+          "description": "Fetch the number of logs available for a webhook",
+          "http_method": "GET",
+          "params": [
+            {
+              "default": null,
+              "description": "The ID of the webhook to fetch the logs",
+              "name": "webhook_id",
+              "required": true,
+              "type": "int"
+            }
+          ],
+          "return_description": "The number representing the total number of logs for this webhook",
+          "return_type": "int",
+          "signature": "public getLogsCount(int $webhook_id) : int"
+        },
+        "log": {
+          "category": "api",
+          "description": "Logs a webhook event",
+          "http_method": "POST",
+          "params": [
+            {
+              "default": null,
+              "description": "An array containing the webhook information to log:",
+              "fields": [
+                {
+                  "description": "The ID of the staff member who manually triggered the webhook (optional)",
+                  "name": "staff_id"
+                },
+                {
+                  "description": "The ID of the webhook associated to this log",
+                  "name": "webhook_id"
+                },
+                {
+                  "description": "The event triggered by the webhook",
+                  "name": "event"
+                },
+                {
+                  "description": "An array of fields sent by the webhook",
+                  "name": "fields"
+                },
+                {
+                  "description": "The raw response returned by the callback",
+                  "name": "response"
+                },
+                {
+                  "description": "The HTTP response from the callback",
+                  "name": "http_response"
+                }
+              ],
+              "name": "vars",
+              "required": true,
+              "type": "array"
+            }
+          ],
+          "return_description": "",
+          "return_type": "",
+          "signature": "public log(array $vars)"
+        },
+        "retryLog": {
+          "category": "api",
+          "description": "Webhook Logs",
+          "http_method": null,
+          "params": [
+            {
+              "default": null,
+              "description": "The ID of the webhook to be retried",
+              "name": "log_id",
+              "required": true,
+              "type": "int"
+            }
+          ],
+          "return_description": "An object representing a logged request",
+          "return_type": "mixed",
+          "signature": "public retryLog(int $log_id) : mixed"
+        }
+      },
+      "pagination": {
+        "getAllLogs": "getAllLogsCount",
+        "getLogs": "getLogsCount"
+      },
+      "source": "https://github.com/blesta/plugin-webhooks/blob/master/models/webhooks_logs.php"
+    },
+    "webhooks.webhooks_webhooks": {
+      "methods": {
+        "add": {
+          "category": "api",
+          "description": "Webhooks",
+          "http_method": "POST",
+          "params": [
+            {
+              "default": null,
+              "description": "An array of webhook info including:",
+              "fields": [
+                {
+                  "description": "The ID of company for this webhook",
+                  "name": "company_id"
+                },
+                {
+                  "description": "The callback for the webhook, must be a URL for outgoing webhooks or a string for incoming webhooks",
+                  "name": "callback"
+                },
+                {
+                  "description": "The name of the event to listen or trigger",
+                  "name": "event"
+                },
+                {
+                  "description": "The type of the webhook, it could be \"incoming\" or \"outgoing\"",
+                  "name": "type"
+                },
+                {
+                  "description": "The method of th webhook, it could be \"get\", \"post\" or \"json\"",
+                  "name": "method"
+                },
+                {
+                  "description": "A numerically indexed array of arrays, each one containing",
+                  "name": "fields"
+                },
+                {
+                  "description": "The name of the field from the event",
+                  "name": "field"
+                },
+                {
+                  "description": "The new name for the field",
+                  "name": "parameter"
+                }
+              ],
+              "name": "vars",
+              "required": true,
+              "type": "array"
+            }
+          ],
+          "return_description": "Returns the ID of the webhook or void on error",
+          "return_type": "mixed",
+          "signature": "public add(array $vars) : mixed"
+        },
+        "delete": {
+          "category": "api",
+          "description": "Deletes an existing webhook",
+          "http_method": "DELETE",
+          "params": [
+            {
+              "default": null,
+              "description": "The ID of the webhook to remove",
+              "name": "webhook_id",
+              "required": true,
+              "type": "int"
+            }
+          ],
+          "return_description": "",
+          "return_type": "",
+          "signature": "public delete(int $webhook_id)"
+        },
+        "edit": {
+          "category": "api",
+          "description": "Updates an existing webhook",
+          "http_method": "PUT",
+          "params": [
+            {
+              "default": null,
+              "description": "The ID of the webhook to update",
+              "name": "webhook_id",
+              "required": true,
+              "type": "int"
+            },
+            {
+              "default": null,
+              "description": "An array of webhook info including:",
+              "fields": [
+                {
+                  "description": "The ID of company for this webhook",
+                  "name": "company_id"
+                },
+                {
+                  "description": "The callback for the webhook, must be a URL for outgoing webhooks or a string for incoming webhooks",
+                  "name": "callback"
+                },
+                {
+                  "description": "The name of the event to listen or trigger",
+                  "name": "event"
+                },
+                {
+                  "description": "The type of the webhook, it could be \"incoming\" or \"outgoing\"",
+                  "name": "type"
+                },
+                {
+                  "description": "The method of th webhook, it could be \"get\", \"post\" or \"json\"",
+                  "name": "method"
+                },
+                {
+                  "description": "A numerically indexed array of arrays, each one containing",
+                  "name": "fields"
+                },
+                {
+                  "description": "The name of the field from the event",
+                  "name": "field"
+                },
+                {
+                  "description": "The new name for the field",
+                  "name": "parameter"
+                }
+              ],
+              "name": "vars",
+              "required": true,
+              "type": "array"
+            }
+          ],
+          "return_description": "Returns the ID of the webhook or void on error",
+          "return_type": "mixed",
+          "signature": "public edit(int $webhook_id, array $vars) : mixed"
+        },
+        "get": {
+          "category": "api",
+          "description": "Fetches a single webhook",
+          "http_method": "GET",
+          "params": [
+            {
+              "default": null,
+              "description": "The ID of the webhook to fetch",
+              "name": "webhook_id",
+              "required": true,
+              "type": "int"
+            }
+          ],
+          "return_description": "An array of stdClass objects representing webhooks",
+          "return_type": "array",
+          "signature": "public get(int $webhook_id) : array"
+        },
+        "getAll": {
+          "category": "api",
+          "description": "Returns a list with all the webhooks for the given type",
+          "http_method": "GET",
+          "params": [
+            {
+              "default": "'incoming'",
+              "description": "The type of the webhook to filter by (optional, default \"incoming\"), one of:",
+              "fields": [
+                {
+                  "description": "All incoming webhooks",
+                  "name": "incoming"
+                },
+                {
+                  "description": "All outgoing webhooks",
+                  "name": "outgoing"
+                },
+                {
+                  "description": "All webhooks",
+                  "name": "null"
+                }
+              ],
+              "name": "type",
+              "required": false,
+              "type": "string"
+            },
+            {
+              "default": "['method' => 'DESC']",
+              "description": "The sort and order conditions (e.g. array('sort_field'=>\"ASC\"), optional)",
+              "name": "order_by",
+              "required": false,
+              "type": "array"
+            }
+          ],
+          "return_description": "An array of stdClass objects representing webhooks",
+          "return_type": "array",
+          "signature": "public getAll($type = 'incoming', $order_by = ['method' => 'DESC']) : array"
+        },
+        "getByCallback": {
+          "category": "api",
+          "description": "Fetches a single webhook by the callback and type",
+          "http_method": "GET",
+          "params": [
+            {
+              "default": null,
+              "description": "The callback of the webhook",
+              "name": "callback",
+              "required": true,
+              "type": "string"
+            },
+            {
+              "default": "'incoming'",
+              "description": "The type of webhook (optional)",
+              "name": "type",
+              "required": false,
+              "type": "string"
+            }
+          ],
+          "return_description": "An array of stdClass objects representing webhooks",
+          "return_type": "array",
+          "signature": "public getByCallback(?string $callback, string $type = 'incoming') : array"
+        },
+        "getByEvent": {
+          "category": "api",
+          "description": "Fetches a single webhook by the event and type",
+          "http_method": "GET",
+          "params": [
+            {
+              "default": null,
+              "description": "The event of the webhook",
+              "name": "event",
+              "required": true,
+              "type": "string"
+            },
+            {
+              "default": "'incoming'",
+              "description": "The type of webhook (optional)",
+              "name": "type",
+              "required": false,
+              "type": "string"
+            }
+          ],
+          "return_description": "An array of stdClass objects representing webhooks",
+          "return_type": "array",
+          "signature": "public getByEvent(?string $event, string $type = 'incoming') : array"
+        },
+        "getEvents": {
+          "category": "api",
+          "description": "Retrieves the rule set for adding/editing webhooks",
+          "http_method": "GET",
+          "params": [],
+          "return_description": "The rules / private function getRules(array &$vars, bool $edit = false) { $rules = [ 'company_id' => [ 'exists' => [ 'rule' => [[$this, 'validateExists'], 'id', 'companies'], 'message' => $this->_('WebhooksWebhooks.!error.company_id.exists') ] ], 'callback' => [ 'exists' => [ 'rule' => [ function ($callback, $type) use ($vars) { // Return false if it is an outgoing webhook if ($vars['type'] == 'outgoing') { return false; } // Check if another webhook exists with this callback $webhook = $this->Record->select() ->from('webhooks') ->where('company_id', '=', $vars['company_id'] ?? null) ->where('callback', '=', $callback) ->where('type', '=', $type) ->fetchAll(); return count($webhook) > 0; }, ['_linked' => 'type'], ], 'negate' => true, 'message' => $this->_('WebhooksWebhooks.!error.callback.exists') ], 'empty' => [ 'rule' => 'isEmpty', 'negate' => true, 'message' => $this->_('WebhooksWebhooks.!error.callback.empty') ], 'length' => [ 'rule' => ['maxLength', 255], 'message' => $this->_('WebhooksWebhooks.!error.callback.length') ] ], 'events[]' => [ 'exists' => [ 'rule' => ['in_array', array_keys($this->getEvents())], 'message' => $this->_('WebhooksWebhooks.!error.events[].exists') ] ], 'type' => [ 'valid' => [ 'rule' => ['in_array', array_keys($this->getTypes())], 'message' => $this->_('WebhooksWebhooks.!error.type.valid') ] ], 'method' => [ 'valid' => [ 'rule' => ['in_array', array_keys($this->getMethods())], 'message' => $this->_('WebhooksWebhooks.!error.method.valid') ] ], 'fields[][field]' => [ 'empty' => [ 'if_set' => true, 'rule' => 'isEmpty', 'negate' => true, 'message' => $this->_('WebhooksWebhooks.!error.fields[][field].empty') ], 'length' => [ 'if_set' => true, 'rule' => ['maxLength', 255], 'message' => $this->_('WebhooksWebhooks.!error.fields[][field].length') ] ], 'fields[][parameter]' => [ 'empty' => [ 'if_set' => true, 'rule' => 'isEmpty', 'negate' => true, 'message' => $this->_('WebhooksWebhooks.!error.fields[][parameter].empty') ], 'length' => [ 'if_set' => true, 'rule' => ['maxLength', 255], 'message' => $this->_('WebhooksWebhooks.!error.fields[][parameter].length') ] ] ]; // Format fields if (isset($vars['fields'])) { foreach ($vars['fields'] as $key => $field) { if (empty($field['field']) && empty($field['parameter'])) { unset($vars['fields'][$key]); } } $vars['fields'] = array_values($vars['fields']); } // Update rules if editing if ($edit) { $rules['company_id']['exists']['if_set'] = true; $rules['callback']['empty']['if_set'] = true; $rules['callback']['length']['if_set'] = true; $rules['event']['exists']['if_set'] = true; $rules['type']['valid']['if_set'] = true; $rules['method']['valid']['if_set'] = true; foreach ($vars as &$var) { if (empty($var)) { unset($var); } } } return $rules; } /** Returns a list of all available events",
+          "return_type": "array",
+          "signature": "public getEvents() : array"
+        },
+        "getList": {
+          "category": "api",
+          "description": "Returns a list of webhooks for the given type",
+          "http_method": "GET",
+          "params": [
+            {
+              "default": "'incoming'",
+              "description": "The type of the webhook to filter by (optional, default \"incoming\"), one of:",
+              "fields": [
+                {
+                  "description": "All incoming webhooks",
+                  "name": "incoming"
+                },
+                {
+                  "description": "All outgoing webhooks",
+                  "name": "outgoing"
+                }
+              ],
+              "name": "type",
+              "required": false,
+              "type": "string"
+            },
+            {
+              "default": "1",
+              "description": "The page to return results for (optional, default 1)",
+              "name": "page",
+              "required": false,
+              "type": "int"
+            },
+            {
+              "default": "['method' => 'DESC']",
+              "description": "The sort and order conditions (e.g. array('sort_field'=>\"ASC\"), optional)",
+              "name": "order_by",
+              "required": false,
+              "type": "array"
+            }
+          ],
+          "return_description": "An array of stdClass objects representing webhooks",
+          "return_type": "array",
+          "signature": "public getList($type = 'incoming', $page = 1, $order_by = ['method' => 'DESC']) : array"
+        },
+        "getMethods": {
+          "category": "internal",
+          "description": "Returns a list of all available webhook methods",
+          "http_method": null,
+          "params": [],
+          "return_description": "A list of webhook methods",
+          "return_type": "array",
+          "signature": "public getMethods() : array"
+        },
+        "getTypeCount": {
+          "category": "api",
+          "description": "Returns the number of results available for the given type",
+          "http_method": "GET",
+          "params": [
+            {
+              "default": "'incoming'",
+              "description": "The type of the webhook to filter by (optional, default \"incoming\"), one of:",
+              "fields": [
+                {
+                  "description": "All incoming webhooks",
+                  "name": "incoming"
+                },
+                {
+                  "description": "All outgoing webhooks",
+                  "name": "outgoing"
+                }
+              ],
+              "name": "type",
+              "required": false,
+              "type": "string"
+            }
+          ],
+          "return_description": "The number representing the total number of services for this client with that status",
+          "return_type": "int",
+          "signature": "public getTypeCount($type = 'incoming') : int"
+        },
+        "getTypes": {
+          "category": "api",
+          "description": "Returns a list of all available webhook types",
+          "http_method": "GET",
+          "params": [],
+          "return_description": "A list of webhook types",
+          "return_type": "array",
+          "signature": "public getTypes() : array"
+        }
+      },
+      "source": "https://github.com/blesta/plugin-webhooks/blob/master/models/webhooks_webhooks.php"
+    }
+  }
+}

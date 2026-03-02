@@ -53,6 +53,8 @@ exclude = [
     "CLAUDE.md",
     "tests/",
     "benchmarks/",
+    "tools/",
+    "schemas/",
     "examples/",
     "uv.lock",
 ]
@@ -68,6 +70,8 @@ dev = [
     "pytest-cov>=7.0.0",
     "python-dotenv>=1.2.1",
     "ruff>=0.15.4",
+    "beautifulsoup4>=4.12",
+    "lxml>=5.0",
 ]
 
 [tool.pytest.ini_options]
@@ -76,6 +80,7 @@ markers = [
 ]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+pythonpath = ["."]
 
 [tool.black]
 line-length = 88
