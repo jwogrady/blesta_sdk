@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-03-01
+
+### Added
+- `BlestaDiscovery` — schema-driven API discovery module. Loads bundled JSON schemas (63 core models, 8 plugin models) and exposes `list_models()`, `list_methods()`, `get_method_spec()`, `resolve_http_method()`, and `suggest_pagination_pair()`.
+- `MethodSpec` frozen dataclass returned by `get_method_spec()` with model, method, http_method, category, description, params, return_type, source, and signature fields.
+- `generate_capabilities_report(format="markdown"|"json")` for full API surface reports.
+- `generate_ai_index(path)` writes JSONL index suitable for embedding pipelines.
+- `call(model, method, args=None, action=None)` on both `BlestaRequest` and `AsyncBlestaRequest` — schema-aware request that infers the HTTP method from the bundled schema. Falls back to POST if schema is unavailable.
+- `call_all(model, method, args=None, start_page=1)` — schema-aware pagination convenience wrapper.
+- `count_for(model, list_method="getList", args=None)` — auto-discovers the count method via schema pagination pairs. Falls back to `list_method + "Count"`.
+- `BlestaDiscovery` and `MethodSpec` exported from `blesta_sdk` package `__init__.py`.
+- Comprehensive test suites for discovery module, call helpers, and schema tooling I/O layers.
+- Schema extractor I/O layer tests (mocked `build_schema()`, `main()` CLI for both core and plugin extractors).
+
+### Changed
+- `Development Status` classifier upgraded from `3 - Alpha` to `4 - Beta`.
+- CI workflow now lints `tools/` directory alongside `src/` and `tests/`.
+- `__getattr__` in `__init__.py` now has explicit `-> object` return type annotation.
+- README rewritten with complete v0.4.0 API reference including discovery, schema-aware helpers, authentication section, and async-specific method documentation.
+- README API reference table now includes `submit()`, `call()`, `call_all()`, `count_for()`, and `auth_method` constructor parameter.
+- README `AsyncBlestaRequest` section now documents `get_all_fast()` and `get_report_series_concurrent()`.
+
+### Fixed
+- `is_csv` property now short-circuits on empty/whitespace responses before attempting JSON parse, avoiding unnecessary work.
+- `iter_all()` (sync and async) avoids redundant variable assignment when args is `None`.
+- Schema tooling test coverage increased from 73% to 98%.
+
 ## [0.3.0] - 2026-03-01
 
 ### Added

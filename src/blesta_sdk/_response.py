@@ -71,9 +71,9 @@ class BlestaResponse:
     @property
     def is_csv(self) -> bool:
         """Returns True if the raw response appears to be CSV data."""
-        if self.is_json:
-            return False
         if not self._raw or not self._raw.strip():
+            return False
+        if self.is_json:
             return False
         lines = self._raw.strip().splitlines()
         if len(lines) < 2:

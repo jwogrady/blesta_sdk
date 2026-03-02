@@ -240,13 +240,11 @@ class AsyncBlestaRequest:
         :param start_page: Page number to start from.
         :return: Async iterator of individual result items.
         """
-        if args is None:
-            args = {}
+        base_args = args or {}
 
         page = start_page
         while True:
-            page_args = {**args, "page": page}
-            response = await self.get(model, method, page_args)
+            response = await self.get(model, method, {**base_args, "page": page})
 
             if response.status_code != 200:
                 logger.warning(
@@ -615,6 +613,78 @@ class AsyncBlestaRequest:
                 row["_period"] = period
             rows.extend(csv_rows)
         return rows
+
+    async def call(
+        self,
+        model: str,
+        method: str,
+        args: dict[str, Any] | None = None,
+        action: str | None = None,
+    ) -> BlestaResponse:
+        """Call an API method, inferring the HTTP method from the schema.
+
+        Uses :class:`~blesta_sdk.BlestaDiscovery` to resolve the correct
+        HTTP method when *action* is ``None``. Falls back to ``"POST"``
+        if the schema is unavailable or the method is ambiguous.
+
+        :param model: API model (e.g., ``"clients"``).
+        :param method: API method (e.g., ``"getList"``).
+        :param args: Request parameters.
+        :param action: Explicit HTTP method override. If ``None``,
+            the method is inferred from the schema.
+        :return: Parsed API response.
+        """
+        if action is None:
+            from blesta_sdk._discovery import BlestaDiscovery
+
+            disco = BlestaDiscovery()
+            action = disco.resolve_http_method(model, method, default="POST")
+        return await self.submit(model, method, args, action)  # type: ignore[arg-type]
+
+    async def call_all(
+        self,
+        model: str,
+        method: str,
+        args: dict[str, Any] | None = None,
+        start_page: int = 1,
+    ) -> list[Any]:
+        """Paginate an API method, inferring the HTTP verb from the schema.
+
+        Convenience wrapper around :meth:`get_all` that uses schema
+        discovery to confirm the method should be called via GET.
+
+        :param model: API model (e.g., ``"invoices"``).
+        :param method: API method (e.g., ``"getList"``).
+        :param args: Query parameters.
+        :param start_page: Page number to start from.
+        :return: List of all result items across all pages.
+        """
+        return await self.get_all(model, method, args, start_page)
+
+    async def count_for(
+        self,
+        model: str,
+        list_method: str = "getList",
+        args: dict[str, Any] | None = None,
+    ) -> int:
+        """Fetch the record count for a paginated list method.
+
+        Uses :class:`~blesta_sdk.BlestaDiscovery` to find the matching
+        count method (e.g., ``"getList"`` -> ``"getListCount"``). Falls
+        back to ``list_method + "Count"`` if the schema is unavailable.
+
+        :param model: API model (e.g., ``"transactions"``).
+        :param list_method: The list method to find a count for.
+        :param args: Query parameters.
+        :return: Record count, or ``0`` on errors.
+        """
+        from blesta_sdk._discovery import BlestaDiscovery
+
+        disco = BlestaDiscovery()
+        count_method = disco.suggest_pagination_pair(model, list_method)
+        if count_method is None:
+            count_method = list_method + "Count"
+        return await self.count(model, count_method, args)
 
     def get_last_request(self) -> dict[str, Any] | None:
         """Return details of the last request made.

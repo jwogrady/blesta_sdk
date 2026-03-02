@@ -3,16 +3,24 @@
 Two groups:
 1. Parser unit tests — mocked HTML fixtures, no network.
 2. Schema validation tests — validate the committed JSON file.
+3. I/O layer tests — mocked orchestration and CLI.
 """
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 import pytest
 
-from tools.extract_schema import parse_class_page, parse_model_list
+from tools.extract_schema import (
+    _detect_pagination,
+    build_schema,
+    fetch_with_delay,
+    parse_class_page,
+    parse_model_list,
+)
 
 SCHEMA_PATH = (
     Path(__file__).resolve().parent.parent / "schemas" / "blesta_api_schema.json"
@@ -641,3 +649,215 @@ class TestSchemaFile:
         field_names = [f["name"] for f in vars_param["fields"]]
         assert "contact_id" in field_names
         assert "first_name" in field_names
+
+
+# ---------------------------------------------------------------------------
+# I/O layer tests
+# ---------------------------------------------------------------------------
+
+
+class TestFetchWithDelay:
+    def test_fetch_with_delay(self):
+        mock_session = Mock()
+        mock_session.get.return_value = Mock(text="<html></html>")
+        mock_session.get.return_value.raise_for_status = Mock()
+        with patch("tools.extract_schema.time.sleep"):
+            result = fetch_with_delay("http://x.com", mock_session, delay=0)
+        assert result == "<html></html>"
+        mock_session.get.assert_called_once_with("http://x.com", timeout=30)
+
+    def test_fetch_with_delay_raises(self):
+        mock_session = Mock()
+        mock_session.get.side_effect = Exception("fail")
+        with pytest.raises(Exception, match="fail"):
+            fetch_with_delay("http://x.com", mock_session)
+
+
+class TestDetectPagination:
+    def test_pagination_pair_found(self):
+        methods = {"getList": {}, "getListCount": {}, "get": {}}
+        assert _detect_pagination(methods) == {"getList": "getListCount"}
+
+    def test_no_pagination(self):
+        methods = {"get": {}, "create": {}}
+        assert _detect_pagination(methods) == {}
+
+    def test_multiple_pairs(self):
+        methods = {
+            "getList": {},
+            "getListCount": {},
+            "search": {},
+            "searchCount": {},
+        }
+        result = _detect_pagination(methods)
+        assert result == {"getList": "getListCount", "search": "searchCount"}
+
+
+class TestBuildSchema:
+    def test_build_schema_with_methods(self):
+        models_html = MINIMAL_MODEL_LIST_HTML
+
+        def fetch_fn(url):
+            return SINGLE_METHOD_HTML
+
+        schema = build_schema(models_html, fetch_fn)
+        assert "metadata" in schema
+        assert "models" in schema
+        assert schema["metadata"]["schema_version"] == "2.0.0"
+        assert schema["metadata"]["model_count"] > 0
+
+    def test_build_schema_fetch_failure(self):
+        models_html = MINIMAL_MODEL_LIST_HTML
+
+        def fetch_fn(url):
+            raise RuntimeError("network error")
+
+        schema = build_schema(models_html, fetch_fn)
+        assert schema["metadata"]["model_count"] == 0
+        assert schema["models"] == {}
+
+    def test_build_schema_empty_methods(self):
+        models_html = MINIMAL_MODEL_LIST_HTML
+
+        def fetch_fn(url):
+            return "<html><body></body></html>"
+
+        schema = build_schema(models_html, fetch_fn)
+        assert schema["metadata"]["model_count"] == 0
+
+    def test_build_schema_pagination_detected(self):
+        pagination_html = """
+        <html><body>
+        <article class="phpdocumentor-element -method -public">
+          <h4 id="method_getList"><a>getList</a></h4>
+          <p class="phpdocumentor-summary">List items</p>
+          <code class="phpdocumentor-signature">
+            <span class="phpdocumentor-signature__response_type">array</span>
+            getList()
+          </code>
+        </article>
+        <article class="phpdocumentor-element -method -public">
+          <h4 id="method_getListCount"><a>getListCount</a></h4>
+          <p class="phpdocumentor-summary">Count items</p>
+          <code class="phpdocumentor-signature">
+            <span class="phpdocumentor-signature__response_type">int</span>
+            getListCount()
+          </code>
+        </article>
+        </body></html>
+        """
+
+        def fetch_fn(url):
+            return pagination_html
+
+        schema = build_schema(MINIMAL_MODEL_LIST_HTML, fetch_fn)
+        for model_name in schema["models"]:
+            model = schema["models"][model_name]
+            if "getList" in model["methods"] and "getListCount" in model["methods"]:
+                assert "pagination" in model
+                assert model["pagination"]["getList"] == "getListCount"
+
+
+class TestParseClassPageEdgeCases:
+    def test_article_without_h4_skipped(self):
+        html = """
+        <html><body>
+        <article class="phpdocumentor-element -method -public">
+          <p>No h4 tag here</p>
+        </article>
+        </body></html>
+        """
+        assert parse_class_page(html) == {}
+
+    def test_method_parse_failure_logged(self):
+        """Methods that raise during parsing are skipped with a warning."""
+        html = """
+        <html><body>
+        <article class="phpdocumentor-element -method -public">
+          <h4 id="method_getList"><a>getList</a></h4>
+          <p class="phpdocumentor-summary">List items</p>
+          <code class="phpdocumentor-signature">
+            <span class="phpdocumentor-signature__response_type">array</span>
+            getList()
+          </code>
+        </article>
+        </body></html>
+        """
+        with patch(
+            "tools.extract_schema._parse_method_article",
+            side_effect=ValueError("parse error"),
+        ):
+            result = parse_class_page(html)
+        assert result == {}
+
+
+class TestMainCLI:
+    def test_main_dry_run(self, tmp_path, capsys):
+        """main() --dry-run prints stats without writing."""
+        from tools.extract_schema import main
+
+        models_html = MINIMAL_MODEL_LIST_HTML
+        class_html = SINGLE_METHOD_HTML
+
+        mock_session = Mock()
+        mock_response = Mock(text=models_html)
+        mock_response.raise_for_status = Mock()
+
+        # First call returns model list, subsequent calls return class page
+        call_count = 0
+
+        def get_side_effect(url, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            text = models_html if call_count == 1 else class_html
+            resp = Mock(text=text)
+            resp.raise_for_status = Mock()
+            return resp
+
+        mock_session.get.side_effect = get_side_effect
+        mock_session.headers = {}
+
+        with (
+            patch("sys.argv", ["extract_schema", "--dry-run"]),
+            patch("tools.extract_schema.time.sleep"),
+            patch("requests.Session", return_value=mock_session),
+        ):
+            main()
+
+        captured = capsys.readouterr()
+        output = json.loads(captured.out)
+        assert "metadata" in output
+        assert "model_names" in output
+
+    def test_main_write_file(self, tmp_path):
+        """main() writes schema to output file."""
+        from tools.extract_schema import main
+
+        output_file = tmp_path / "out.json"
+        models_html = MINIMAL_MODEL_LIST_HTML
+        class_html = SINGLE_METHOD_HTML
+
+        mock_session = Mock()
+        call_count = 0
+
+        def get_side_effect(url, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            resp = Mock(text=models_html if call_count == 1 else class_html)
+            resp.raise_for_status = Mock()
+            return resp
+
+        mock_session.get.side_effect = get_side_effect
+        mock_session.headers = {}
+
+        with (
+            patch("sys.argv", ["extract_schema", "--output", str(output_file)]),
+            patch("tools.extract_schema.time.sleep"),
+            patch("requests.Session", return_value=mock_session),
+        ):
+            main()
+
+        assert output_file.exists()
+        data = json.loads(output_file.read_text())
+        assert "metadata" in data
+        assert "models" in data

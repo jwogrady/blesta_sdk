@@ -66,6 +66,21 @@ response = api.put("clients", "edit", {"client_id": 1, "firstname": "Jane"})
 response = api.delete("clients", "delete", {"client_id": 1})
 ```
 
+### Schema-Aware Calls
+
+Use `call()` to let the SDK infer the correct HTTP method from the bundled API schema:
+
+```python
+# Automatically uses GET (inferred from schema)
+response = api.call("clients", "getList", {"status": "active"})
+
+# Automatically uses POST (inferred from schema)
+response = api.call("clients", "create", {"firstname": "John"})
+
+# Override with explicit action
+response = api.call("clients", "create", {"firstname": "John"}, action="POST")
+```
+
 ### Response Handling
 
 ```python
@@ -89,6 +104,9 @@ all_clients = api.get_all("clients", "getList", {"status": "active"})
 # Memory-efficient generator
 for client in api.iter_all("clients", "getList", {"status": "active"}):
     print(client["id"])
+
+# Schema-aware variant (equivalent to get_all)
+all_clients = api.call_all("clients", "getList")
 ```
 
 ### Record Counts
@@ -99,6 +117,9 @@ total = api.count("clients")
 
 # Custom count method
 active = api.count("clients", "getStatusCount", {"status": "active"})
+
+# Schema-aware: auto-discovers the count method for a list method
+total = api.count_for("clients", "getList")
 ```
 
 Returns `0` on errors or non-numeric responses.
@@ -168,6 +189,16 @@ api = BlestaRequest(url, user, key, pool_connections=20, pool_maxsize=20)
 
 Defaults are `10`/`10` (up from requests' default of `1`/`1`).
 
+### Authentication
+
+```python
+# Default: HTTP Basic Auth
+api = BlestaRequest(url, user, key)
+
+# Header-based auth (recommended by Blesta for CGI/PHP-FPM setups)
+api = BlestaRequest(url, user, key, auth_method="header")
+```
+
 ### Context Manager
 
 ```python
@@ -207,6 +238,43 @@ api = BlestaRequest(url, user, key, max_retries=3)
 response = api.get("clients", "getList")
 ```
 
+## API Discovery
+
+The SDK bundles machine-readable schemas for all 63 core Blesta models and 8 plugin models. Use `BlestaDiscovery` to introspect the available API surface:
+
+```python
+from blesta_sdk import BlestaDiscovery
+
+disco = BlestaDiscovery()
+
+# List all models
+disco.list_models()                      # all models
+disco.list_models(source="core")         # core models only
+disco.list_models(source="plugin")       # plugin models only
+
+# List methods for a model
+disco.list_methods("Clients")            # ["create", "delete", "edit", ...]
+
+# Get full method specification
+spec = disco.get_method_spec("Clients", "getList")
+spec.http_method   # "GET"
+spec.params        # [{"name": "status", "type": "string", ...}]
+spec.return_type   # "array"
+
+# Resolve HTTP method for a call
+disco.resolve_http_method("Clients", "getList")       # "GET"
+disco.resolve_http_method("Clients", "create")         # "POST"
+
+# Find pagination pairs
+disco.suggest_pagination_pair("Clients", "getList")    # "getListCount"
+
+# Generate a capabilities report
+print(disco.generate_capabilities_report(format="markdown"))
+
+# Generate JSONL index for AI embeddings
+disco.generate_ai_index("blesta_api_index.jsonl")
+```
+
 ## Async Client
 
 Install with `pip install blesta_sdk[async]` (requires `httpx`).
@@ -222,6 +290,10 @@ async with AsyncBlestaRequest(url, user, key) as api:
     all_clients = await api.get_all("clients", "getList")
     total = await api.count("clients")
 
+    # Schema-aware helpers
+    response = await api.call("clients", "getList")
+    total = await api.count_for("clients")
+
     # Async generator for pagination
     async for client in api.iter_all("clients", "getList"):
         print(client["id"])
@@ -231,6 +303,14 @@ async with AsyncBlestaRequest(url, user, key) as api:
         ("clients", "getList"),
         ("invoices", "getList"),
     ])
+
+    # Count-first parallel pagination
+    all_clients = await api.get_all_fast("clients", "getList")
+
+    # Concurrent monthly report fetching
+    rows = await api.get_report_series_concurrent(
+        "package_revenue", "2024-01", "2024-12", max_concurrency=5
+    )
 ```
 
 Constructor accepts `max_connections` and `max_keepalive_connections` (default `10`/`10`) instead of the sync `pool_connections`/`pool_maxsize`.
@@ -273,7 +353,7 @@ Output is JSON to stdout. On errors, the error dict is printed as JSON and the p
 
 ## API Reference
 
-### `BlestaRequest(url, user, key, timeout=30, max_retries=0, pool_connections=10, pool_maxsize=10)`
+### `BlestaRequest(url, user, key, timeout=30, max_retries=0, pool_connections=10, pool_maxsize=10, auth_method="basic")`
 
 | Method | Description |
 |---|---|
@@ -281,9 +361,13 @@ Output is JSON to stdout. On errors, the error dict is printed as JSON and the p
 | `post(model, method, args=None)` | POST request (JSON body) |
 | `put(model, method, args=None)` | PUT request (JSON body) |
 | `delete(model, method, args=None)` | DELETE request (JSON body) |
+| `submit(model, method, args=None, action="POST")` | Send request with explicit HTTP method |
+| `call(model, method, args=None, action=None)` | Schema-aware request (infers HTTP method) |
 | `count(model, method="getListCount", args=None)` | Fetch record count as `int` (`0` on error) |
+| `count_for(model, list_method="getList", args=None)` | Schema-aware count (auto-discovers count method) |
 | `iter_all(model, method, args=None, start_page=1)` | Paginate and yield individual results |
 | `get_all(model, method, args=None, start_page=1)` | Paginate and return all results as a list |
+| `call_all(model, method, args=None, start_page=1)` | Schema-aware pagination (equivalent to `get_all`) |
 | `extract(targets)` | Batch-fetch multiple paginated endpoints |
 | `get_report(report_type, start_date, end_date, extra_vars=None)` | Fetch a Blesta report (CSV) |
 | `get_report_series(report_type, start_month, end_month, extra_vars=None)` | Monthly reports as flat row list |
@@ -293,9 +377,28 @@ Output is JSON to stdout. On errors, the error dict is printed as JSON and the p
 
 Supports context manager (`with BlestaRequest(...) as api:`).
 
-### `AsyncBlestaRequest(url, user, key, timeout=30, max_retries=0, max_connections=10, max_keepalive_connections=10)`
+### `AsyncBlestaRequest(url, user, key, timeout=30, max_retries=0, max_connections=10, max_keepalive_connections=10, auth_method="basic")`
 
-Same methods as `BlestaRequest`, all `async`. `extract()` runs targets concurrently via `asyncio.gather()`. `iter_all()` is an async generator (`async for`). Supports `async with` context manager.
+Same methods as `BlestaRequest`, all `async`. Additional async-specific methods:
+
+| Method | Description |
+|---|---|
+| `get_all_fast(model, method, count_method="getListCount", args=None, page_size=25, batch_size=10)` | Count-first parallel pagination |
+| `get_report_series_concurrent(report_type, start_month, end_month, extra_vars=None, max_concurrency=None)` | Concurrent monthly report fetching |
+
+`extract()` runs targets concurrently via `asyncio.gather()`. `iter_all()` is an async generator (`async for`). Supports `async with` context manager.
+
+### `BlestaDiscovery(core_schema_path=None, plugin_schema_path=None)`
+
+| Method | Description |
+|---|---|
+| `list_models(source=None)` | List all model names (filterable by `"core"` or `"plugin"`) |
+| `list_methods(model)` | List method names for a model |
+| `get_method_spec(model, method)` | Get full `MethodSpec` dataclass for a method |
+| `resolve_http_method(model, method, default="POST")` | Resolve HTTP method from schema |
+| `suggest_pagination_pair(model, list_method="getList")` | Find the count method for a list method |
+| `generate_capabilities_report(format="markdown")` | Generate API capabilities report |
+| `generate_ai_index(path)` | Write JSONL index for AI embeddings |
 
 ### `BlestaResponse`
 
@@ -321,7 +424,7 @@ Same methods as `BlestaRequest`, all `async`. `extract()` runs targets concurren
 1. Fork the repository
 2. Create a feature branch: `git checkout -b feature/your-feature`
 3. Run tests: `uv run pytest -v -m "not integration"`
-4. Run linting: `uv run ruff check src/ tests/`
+4. Run linting: `uv run ruff check src/ tests/ tools/`
 5. Submit a pull request
 
 ## License
