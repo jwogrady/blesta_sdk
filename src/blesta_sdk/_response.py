@@ -31,7 +31,7 @@ class BlestaResponse:
     def __init__(self, response: str | None, status_code: int):
         self._raw = response
         self._status_code = status_code
-        self._parsed: dict[str, Any] | None = None
+        self._parsed: dict[str, Any] | object = _UNSET
         self._json_valid: bool | None = None
         self._csv_cache: list[dict[str, str]] | None | object = _UNSET
 
@@ -71,6 +71,8 @@ class BlestaResponse:
     @property
     def is_csv(self) -> bool:
         """Returns True if the raw response appears to be CSV data."""
+        if self._status_code != 200:
+            return False
         if not self._raw or not self._raw.strip():
             return False
         if self.is_json:
@@ -157,13 +159,36 @@ class BlestaResponse:
             return {"error": formatted["error"]}
         return None
 
+    def free_raw(self) -> None:
+        """Release the raw response text to reduce memory in long-running jobs.
+
+        Triggers parsing of all cacheable fields (JSON data, CSV data)
+        before discarding the raw text. After calling this method,
+        :attr:`raw` returns an empty string but all parsed properties
+        continue to work from their caches.
+        """
+        # Ensure caches are populated before discarding raw text.
+        self._format_response()
+        if self._csv_cache is _UNSET:
+            # Populate csv_data cache (may set to None).
+            _ = self.csv_data
+        self._raw = ""
+
     def _format_response(self) -> dict[str, Any]:
         """Parse raw response as JSON, returning a fallback on failure."""
-        if self._parsed is None:
-            try:
-                self._parsed = json.loads(self._raw)
-                self._json_valid = True
-            except (json.JSONDecodeError, TypeError):
-                self._parsed = {"error": "Invalid JSON response"}
+        if self._parsed is _UNSET:
+            if not self._raw or not self._raw.strip():
+                self._parsed = {"error": "Empty response body"}
                 self._json_valid = False
-        return self._parsed
+            else:
+                try:
+                    result = json.loads(self._raw)
+                    if isinstance(result, dict):
+                        self._parsed = result
+                    else:
+                        self._parsed = {"response": result}
+                    self._json_valid = True
+                except (json.JSONDecodeError, TypeError) as e:
+                    self._parsed = {"error": f"Invalid JSON response: {e}"}
+                    self._json_valid = False
+        return self._parsed  # type: ignore[return-value]

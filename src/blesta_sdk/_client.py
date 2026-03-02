@@ -7,21 +7,25 @@ This module is not part of the public API. Import
 from __future__ import annotations
 
 import logging
+import random
 import time
 from collections.abc import Iterator
 from typing import Any, Literal
-from urllib.parse import urljoin
 
 import requests
 from requests.adapters import HTTPAdapter
 from requests.auth import HTTPBasicAuth
 
 from blesta_sdk._dateutil import _month_boundaries
+from blesta_sdk._exceptions import PaginationError
 from blesta_sdk._response import BlestaResponse
+from blesta_sdk._validation import validate_segment
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_TIMEOUT = 30
+
+_IDEMPOTENT_METHODS = frozenset({"GET", "DELETE"})
 
 
 class BlestaRequest:
@@ -41,7 +45,11 @@ class BlestaRequest:
     :param key: API key.
     :param timeout: Request timeout in seconds.
     :param max_retries: Number of retries on network errors or 5xx responses.
-        Uses exponential backoff (1s, 2s, 4s, …). Defaults to ``0`` (no retries).
+        Only GET and DELETE are retried by default. Pass
+        ``retry_mutations=True`` to also retry POST/PUT.
+        Uses exponential backoff with jitter. Defaults to ``0`` (no retries).
+    :param retry_mutations: Allow retrying non-idempotent methods
+        (POST, PUT). Defaults to ``False``.
     :param pool_connections: Number of connection pools to cache.
         Defaults to ``10``.
     :param pool_maxsize: Maximum number of connections per pool.
@@ -59,6 +67,7 @@ class BlestaRequest:
         key: str,
         timeout: int | float = DEFAULT_TIMEOUT,
         max_retries: int = 0,
+        retry_mutations: bool = False,
         pool_connections: int = 10,
         pool_maxsize: int = 10,
         auth_method: Literal["basic", "header"] = "basic",
@@ -68,6 +77,7 @@ class BlestaRequest:
         self.key = key
         self.timeout = timeout
         self.max_retries = max_retries
+        self.retry_mutations = retry_mutations
         self.auth_method = auth_method
         self._last_request: dict[str, Any] | None = None
         self.session = requests.Session()
@@ -95,6 +105,17 @@ class BlestaRequest:
     def close(self) -> None:
         """Close the underlying HTTP session."""
         self.session.close()
+
+    @staticmethod
+    def _validate_segment(segment: str, name: str) -> None:
+        validate_segment(segment, name)
+
+    @staticmethod
+    def _get_discovery() -> Any:
+        """Return the module-level cached BlestaDiscovery singleton."""
+        from blesta_sdk._discovery import _get_discovery
+
+        return _get_discovery()
 
     def get(
         self, model: str, method: str, args: dict[str, Any] | None = None
@@ -159,6 +180,9 @@ class BlestaRequest:
         On network errors, returns a ``BlestaResponse`` with
         ``status_code=0`` and the exception message as raw text.
 
+        Retries are only attempted for idempotent methods (GET, DELETE)
+        unless ``retry_mutations=True`` was passed to the constructor.
+
         :param model: API model (e.g., ``"clients"``). For plugin models
             use dot notation: ``"plugin.model"`` (builds
             ``plugin.model/method.json``).
@@ -171,11 +195,16 @@ class BlestaRequest:
         if args is None:
             args = {}
 
-        url = urljoin(self.base_url, f"{model}/{method}.json")
+        self._validate_segment(model, "model")
+        self._validate_segment(method, "method")
+        url = f"{self.base_url}{model}/{method}.json"
         self._last_request = {"url": url, "args": args}
 
+        can_retry = self.retry_mutations or action in _IDEMPOTENT_METHODS
+        effective_retries = self.max_retries if can_retry else 0
+
         last_response: BlestaResponse | None = None
-        for attempt in range(self.max_retries + 1):
+        for attempt in range(effective_retries + 1):
             try:
                 if action == "GET":
                     response = self.session.get(url, params=args, timeout=self.timeout)
@@ -190,13 +219,13 @@ class BlestaRequest:
 
                 last_response = BlestaResponse(response.text, response.status_code)
 
-                if response.status_code < 500 or attempt == self.max_retries:
+                if response.status_code < 500 or attempt == effective_retries:
                     return last_response
 
                 logger.warning(
                     "Retry %d/%d: HTTP %d from %s",
                     attempt + 1,
-                    self.max_retries,
+                    effective_retries,
                     response.status_code,
                     url,
                 )
@@ -205,12 +234,13 @@ class BlestaRequest:
                 logger.error("Request failed: %s", e)
                 last_response = BlestaResponse(str(e), 0)
 
-                if attempt == self.max_retries:
+                if attempt == effective_retries:
                     return last_response
 
-                logger.warning("Retry %d/%d: %s", attempt + 1, self.max_retries, e)
+                logger.warning("Retry %d/%d: %s", attempt + 1, effective_retries, e)
 
-            time.sleep(2**attempt)
+            base_delay = 2**attempt
+            time.sleep(base_delay * (0.5 + random.random() * 0.5))  # noqa: S311
 
         if last_response is None:  # pragma: no cover
             raise RuntimeError("Retry loop exited without a response")
@@ -222,25 +252,50 @@ class BlestaRequest:
         method: str,
         args: dict[str, Any] | None = None,
         start_page: int = 1,
+        max_pages: int | None = None,
+        on_error: Literal["raise", "warn"] = "warn",
     ) -> Iterator[Any]:
         """Yield individual items across all pages.
 
         Calls the API with ``page=1``, ``page=2``, etc. until an empty
-        response is returned. Stops on non-200 status codes.
+        response is returned.
 
         :param model: API model (e.g., ``"invoices"``).
         :param method: API method (e.g., ``"getList"``).
         :param args: Query parameters (``page`` is managed automatically).
         :param start_page: Page number to start from.
+        :param max_pages: Maximum number of pages to fetch. ``None``
+            means no limit.
+        :param on_error: Behavior on non-200 status codes. ``"raise"``
+            raises :class:`~blesta_sdk.PaginationError` with partial
+            results attached. ``"warn"`` logs a warning and stops
+            iteration (backward-compatible default).
         :return: Iterator of individual result items.
+        :raises PaginationError: If *on_error* is ``"raise"`` and a
+            non-200 response is received.
         """
         base_args = args or {}
 
         page = start_page
+        pages_fetched = 0
+        collected: list[Any] = []
+        prev_data: list[Any] | None = None
+        repeat_count = 0
+
         while True:
+            if max_pages is not None and pages_fetched >= max_pages:
+                return
+
             response = self.get(model, method, {**base_args, "page": page})
 
             if response.status_code != 200:
+                if on_error == "raise":
+                    raise PaginationError(
+                        f"Pagination error: HTTP {response.status_code} on page {page}",
+                        page=page,
+                        status_code=response.status_code,
+                        partial_items=collected,
+                    )
                 logger.warning(
                     "Pagination stopped: HTTP %d on page %d",
                     response.status_code,
@@ -253,11 +308,29 @@ class BlestaRequest:
                 return
 
             if isinstance(data, list):
+                # Detect stuck pagination (same page returned repeatedly).
+                if prev_data is not None and data == prev_data:
+                    repeat_count += 1
+                    if repeat_count >= 3:
+                        logger.error(
+                            "Pagination aborted: page %d returned identical "
+                            "data %d times consecutively",
+                            page,
+                            repeat_count + 1,
+                        )
+                        return
+                else:
+                    repeat_count = 0
+                prev_data = data
+
+                collected.extend(data)
                 yield from data
             else:
+                collected.append(data)
                 yield data
                 return
 
+            pages_fetched += 1
             page += 1
 
     def get_all(
@@ -266,18 +339,107 @@ class BlestaRequest:
         method: str,
         args: dict[str, Any] | None = None,
         start_page: int = 1,
+        max_pages: int | None = None,
     ) -> list[Any]:
         """Fetch all pages and return results as a single list.
 
         Convenience wrapper around :meth:`iter_all`.
 
+        .. warning::
+            Materializes all records into memory. For large datasets
+            (100k+ records), prefer :meth:`iter_all` or
+            :meth:`iter_pages` to process records in a streaming
+            fashion.
+
         :param model: API model (e.g., ``"invoices"``).
         :param method: API method (e.g., ``"getList"``).
         :param args: Query parameters (``page`` is managed automatically).
         :param start_page: Page number to start from.
+        :param max_pages: Maximum number of pages to fetch. ``None``
+            means no limit.
         :return: List of all result items across all pages.
         """
-        return list(self.iter_all(model, method, args, start_page))
+        return list(self.iter_all(model, method, args, start_page, max_pages))
+
+    def iter_pages(
+        self,
+        model: str,
+        method: str,
+        args: dict[str, Any] | None = None,
+        start_page: int = 1,
+        max_pages: int | None = None,
+        on_error: Literal["raise", "warn"] = "warn",
+    ) -> Iterator[list[Any]]:
+        """Yield each page of results as a separate list.
+
+        Unlike :meth:`iter_all` (which yields individual items),
+        this method yields one list per API page — useful for
+        batch-flushing to a database or file.
+
+        :param model: API model (e.g., ``"invoices"``).
+        :param method: API method (e.g., ``"getList"``).
+        :param args: Query parameters (``page`` is managed automatically).
+        :param start_page: Page number to start from.
+        :param max_pages: Maximum number of pages to fetch.
+        :param on_error: Behavior on non-200 status codes. ``"raise"``
+            raises :class:`~blesta_sdk.PaginationError` with partial
+            page count. ``"warn"`` logs a warning and stops
+            iteration (backward-compatible default).
+        :return: Iterator of page lists.
+        :raises PaginationError: If *on_error* is ``"raise"`` and a
+            non-200 response is received.
+        """
+        base_args = args or {}
+        page = start_page
+        pages_fetched = 0
+        prev_data: list[Any] | None = None
+        repeat_count = 0
+
+        while True:
+            if max_pages is not None and pages_fetched >= max_pages:
+                return
+
+            response = self.get(model, method, {**base_args, "page": page})
+            if response.status_code != 200:
+                if on_error == "raise":
+                    raise PaginationError(
+                        f"Pagination error: HTTP {response.status_code} on page {page}",
+                        page=page,
+                        status_code=response.status_code,
+                    )
+                logger.warning(
+                    "Pagination stopped: HTTP %d on page %d",
+                    response.status_code,
+                    page,
+                )
+                return
+
+            data = response.data
+            if not data:
+                return
+
+            if isinstance(data, list):
+                if prev_data is not None and data == prev_data:
+                    repeat_count += 1
+                    if repeat_count >= 3:
+                        logger.error(
+                            "Pagination aborted: page %d returned identical "
+                            "data %d times consecutively",
+                            page,
+                            repeat_count + 1,
+                        )
+                        return
+                else:
+                    repeat_count = 0
+                prev_data = data
+
+                yield data
+            else:
+                yield [data]
+                return
+
+            pages_fetched += 1
+            page += 1
 
     def count(
         self,
@@ -443,8 +605,7 @@ class BlestaRequest:
                 )
                 continue
             for row in csv_rows:
-                row["_period"] = period
-            rows.extend(csv_rows)
+                rows.append({**row, "_period": period})
         return rows
 
     def call(
@@ -457,8 +618,10 @@ class BlestaRequest:
         """Call an API method, inferring the HTTP method from the schema.
 
         Uses :class:`~blesta_sdk.BlestaDiscovery` to resolve the correct
-        HTTP method when *action* is ``None``. Falls back to ``"POST"``
-        if the schema is unavailable or the method is ambiguous.
+        HTTP method when *action* is ``None``. If the schema cannot
+        resolve the method, falls back to a safe prefix-based heuristic
+        (e.g. ``get*`` -> GET, ``create*`` -> POST). If still ambiguous,
+        defaults to POST with a warning.
 
         :param model: API model (e.g., ``"clients"``).
         :param method: API method (e.g., ``"getList"``).
@@ -468,10 +631,24 @@ class BlestaRequest:
         :return: Parsed API response.
         """
         if action is None:
-            from blesta_sdk._discovery import BlestaDiscovery
+            from blesta_sdk._discovery import _infer_http_method
 
-            disco = BlestaDiscovery()
-            action = disco.resolve_http_method(model, method, default="POST")
+            _sentinel = "_UNRESOLVED_"
+            disco = self._get_discovery()
+            action = disco.resolve_http_method(model, method, default=_sentinel)
+            if action == _sentinel:
+                inferred = _infer_http_method(method)
+                if inferred is not None:
+                    action = inferred
+                else:
+                    action = "POST"
+                    logger.warning(
+                        "call(%s, %s): schema unavailable and method name "
+                        "is ambiguous; falling back to POST. Specify "
+                        "action explicitly to silence this warning.",
+                        model,
+                        method,
+                    )
         return self.submit(model, method, args, action)  # type: ignore[arg-type]
 
     def call_all(
@@ -511,9 +688,7 @@ class BlestaRequest:
         :param args: Query parameters.
         :return: Record count, or ``0`` on errors.
         """
-        from blesta_sdk._discovery import BlestaDiscovery
-
-        disco = BlestaDiscovery()
+        disco = self._get_discovery()
         count_method = disco.suggest_pagination_pair(model, list_method)
         if count_method is None:
             count_method = list_method + "Count"

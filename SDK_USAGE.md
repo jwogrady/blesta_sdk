@@ -15,7 +15,8 @@ api = BlestaRequest(
     key="api_key",
     auth_method="header",   # or "basic" (default)
     timeout=30,             # seconds, default 30
-    max_retries=3,          # exponential backoff on 5xx/network errors
+    max_retries=3,          # exponential backoff with jitter on 5xx/network errors
+    retry_mutations=False,  # True to also retry POST/PUT (default: only GET/DELETE)
     pool_connections=10,    # connection pools to cache (default 10)
     pool_maxsize=10,        # max connections per pool (default 10)
 )
@@ -45,7 +46,7 @@ response = api.submit("clients", "create", {"firstname": "John"}, action="POST")
 
 ### Schema-Aware Calls
 
-`call()` infers the HTTP method from the bundled API schema. Falls back to POST if schema is unavailable.
+`call()` infers the HTTP method from the bundled API schema. If a method is not in the schema, the SDK infers the verb from the method name (e.g. `get*` -> GET, `create*` -> POST, `edit*` -> PUT, `delete*` -> DELETE). If still ambiguous, defaults to POST with a warning.
 
 ```python
 response = api.call("clients", "getList")   # infers GET
@@ -68,6 +69,7 @@ response.is_json       # bool
 response.is_csv        # bool
 response.csv_data      # list[dict] for CSV responses, or None (cached after first access)
 response.to_dataframe()  # pandas DataFrame (requires pandas)
+response.free_raw()      # release raw text to save memory (parsed data still works)
 ```
 
 ### Error Handling
@@ -85,11 +87,17 @@ if response.status_code == 0:
 ## Pagination
 
 ```python
-# Iterator (memory-efficient)
+# Iterator (memory-efficient, yields individual items)
 for client in api.iter_all("clients", "getList"):
     print(client["id"])
 
+# Page-level iterator (yields one list per page — useful for batch DB writes)
+for page in api.iter_pages("clients", "getList"):
+    db.bulk_insert(page)
+
 # Collect all pages into a list
+# WARNING: materializes all records into memory. For 100k+ records,
+# prefer iter_all() or iter_pages() for streaming.
 all_clients = api.get_all("clients", "getList")
 
 # Schema-aware variant (equivalent to get_all)
@@ -97,6 +105,23 @@ all_clients = api.call_all("clients", "getList")
 
 # Start from a specific page
 page_5_onward = api.get_all("clients", "getList", start_page=5)
+
+# Limit number of pages fetched
+first_10_pages = api.get_all("clients", "getList", max_pages=10)
+```
+
+### Pagination Safety
+
+```python
+from blesta_sdk import PaginationError
+
+# Raise on pagination errors (default silently stops)
+try:
+    for client in api.iter_all("clients", "getList", on_error="raise"):
+        process(client)
+except PaginationError as e:
+    print(f"Failed on page {e.page}: HTTP {e.status_code}")
+    print(f"Recovered {len(e.partial_items)} items before failure")
 ```
 
 ## Record Counts
@@ -172,12 +197,14 @@ disco.list_methods("Clients")           # ["create", "delete", "edit", ...]
 
 # Get full method specification (returns frozen MethodSpec dataclass)
 spec = disco.get_method_spec("Clients", "getList")
-spec.http_method       # "GET"
-spec.params            # [{"name": "status", "type": "string", ...}]
-spec.return_type       # "array"
-spec.category          # "api" or "internal"
-spec.source            # "core" or "plugin"
-spec.signature         # PHP-style signature string
+spec.http_method          # "GET"
+spec.description          # "Fetches a list of all clients"
+spec.params               # [{"name": "status", "type": "string", ...}]
+spec.return_type          # "array"
+spec.return_description   # "A list of stdClass objects ..."
+spec.category             # "api" or "internal"
+spec.source               # "core" or "plugin"
+spec.signature            # PHP-style signature string
 
 # Resolve HTTP method
 disco.resolve_http_method("Clients", "getList")       # "GET"
@@ -225,11 +252,16 @@ async with AsyncBlestaRequest(url, user, key, auth_method="header") as api:
     async for client in api.iter_all("clients", "getList"):
         print(client["id"])
 
+    # Async page-level iterator
+    async for page in api.iter_pages("clients", "getList"):
+        await db.bulk_insert(page)
+
     # Concurrent batch extraction (via asyncio.gather)
     data = await api.extract([("clients", "getList"), ("invoices", "getList")])
 
     # Count-first parallel pagination (fetches pages in batches)
-    all_items = await api.get_all_fast("invoices", "getList", batch_size=5)
+    # Set verify=True to re-count after fetching and warn on TOCTOU mismatch
+    all_items = await api.get_all_fast("invoices", "getList", batch_size=5, verify=True)
 
     # Concurrent monthly reports
     rows = await api.get_report_series_concurrent(
@@ -244,10 +276,21 @@ AsyncBlestaRequest(
     url, user, key,
     max_connections=10,              # instead of pool_connections
     max_keepalive_connections=10,    # instead of pool_maxsize
+    max_concurrency=10,             # shared semaphore for concurrent requests
+    retry_mutations=False,          # same as sync client
 )
 ```
 
 Timeout is set at client init (httpx behavior) rather than per-request.
+
+### Async Last Request (Concurrency-Safe)
+
+In concurrent contexts, `get_last_request()` returns the last request from the current asyncio task (via `ContextVar`), not the last request globally on the instance:
+
+```python
+# Safe in concurrent tasks — each task sees its own last request
+last = api.get_last_request()
+```
 
 ## Debugging
 

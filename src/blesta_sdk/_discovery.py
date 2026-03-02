@@ -4,8 +4,10 @@ Loads machine-readable JSON schemas (core API and plugin) and exposes
 methods for listing models, methods, resolving HTTP verbs, and
 generating capability reports.
 
-This module uses only the standard library. Schemas are loaded lazily
-on first access.
+This module uses only the standard library. Schemas are bundled inside
+the ``blesta_sdk.schemas`` package and loaded lazily on first access
+via :mod:`importlib.resources` so they work in installed wheels,
+editable installs, and zipapps.
 
 Usage::
 
@@ -19,22 +21,60 @@ Usage::
 
 from __future__ import annotations
 
+import importlib.resources
 import json
 import logging
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_CORE_SCHEMA = (
-    Path(__file__).resolve().parent.parent.parent / "schemas" / "blesta_api_schema.json"
-)
-_DEFAULT_PLUGIN_SCHEMA = (
-    Path(__file__).resolve().parent.parent.parent
-    / "schemas"
-    / "blesta_plugin_schema.json"
-)
+
+def _bundled_schema_text(filename: str) -> str | None:
+    """Read a bundled schema file from the ``blesta_sdk.schemas`` package.
+
+    Uses :mod:`importlib.resources` so the lookup works in installed
+    wheels, editable installs, and zipapps.
+
+    :param filename: Schema filename (e.g. ``"blesta_api_schema.json"``).
+    :return: File contents as a string, or ``None`` if unavailable.
+    """
+    try:
+        ref = importlib.resources.files("blesta_sdk.schemas").joinpath(filename)
+        return ref.read_text(encoding="utf-8")
+    except (FileNotFoundError, ModuleNotFoundError, TypeError):
+        return None
+
+
+# Prefix-based heuristic for HTTP method inference when schema is
+# unavailable.  Tuples are checked with str.startswith().
+_GET_PREFIXES = ("get", "count", "search")
+_POST_PREFIXES = ("add", "create", "renew", "process", "send", "verify")
+_PUT_PREFIXES = ("edit", "update", "set")
+_DELETE_PREFIXES = ("delete", "remove", "unset", "cancel")
+
+
+def _infer_http_method(method: str) -> str | None:
+    """Infer the HTTP method from a Blesta API method name.
+
+    Uses safe prefix heuristics based on common Blesta naming
+    conventions. Returns ``None`` if the method name is ambiguous.
+
+    :param method: API method name (e.g. ``"getList"``, ``"create"``).
+    :return: ``"GET"``, ``"POST"``, ``"PUT"``, ``"DELETE"``, or ``None``.
+    """
+    lower = method.lower()
+    if lower.startswith(_GET_PREFIXES):
+        return "GET"
+    if lower.startswith(_POST_PREFIXES):
+        return "POST"
+    if lower.startswith(_PUT_PREFIXES):
+        return "PUT"
+    if lower.startswith(_DELETE_PREFIXES):
+        return "DELETE"
+    return None
 
 
 @dataclass(frozen=True)
@@ -97,34 +137,80 @@ class BlestaDiscovery:
         self._source_map = {}
         self._pagination_map = {}
 
-        core_path = self._core_path or _DEFAULT_CORE_SCHEMA
-        self._load_schema(core_path, "core")
+        if self._core_path:
+            self._load_schema_file(self._core_path, "core")
+        else:
+            self._load_bundled_schema("blesta_api_schema.json", "core")
 
-        plugin_path = self._plugin_path or _DEFAULT_PLUGIN_SCHEMA
-        self._load_schema(plugin_path, "plugin")
+        if self._plugin_path:
+            self._load_schema_file(self._plugin_path, "plugin")
+        else:
+            self._load_bundled_schema("blesta_plugin_schema.json", "plugin")
 
-    def _load_schema(self, path: Path, source: str) -> None:
-        """Load a single schema file into the registry.
+    def _load_bundled_schema(self, filename: str, source: str) -> None:
+        """Load a bundled schema from the ``blesta_sdk.schemas`` package.
+
+        :param filename: Schema filename inside the package.
+        :param source: Source label (``"core"`` or ``"plugin"``).
+        """
+        text = _bundled_schema_text(filename)
+        if text is None:
+            logger.warning("Bundled schema not found: %s", filename)
+            return
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError:
+            logger.warning("Invalid JSON in bundled schema: %s", filename)
+            return
+        self._ingest_schema(data, source)
+
+    def _load_schema_file(self, path: Path, source: str) -> None:
+        """Load a single schema file from the filesystem.
 
         :param path: Path to the JSON schema file.
+        :param source: Source label (``"core"`` or ``"plugin"``).
+        """
+        try:
+            with open(path) as f:
+                data = json.load(f)
+        except OSError:
+            logger.warning("Cannot read schema file: %s", path)
+            return
+        except json.JSONDecodeError:
+            logger.warning("Invalid JSON in schema file: %s", path)
+            return
+        self._ingest_schema(data, source)
+
+    def _ingest_schema(self, data: dict[str, Any], source: str) -> None:
+        """Register models from parsed schema data.
+
+        :param data: Parsed schema dict with a ``"models"`` key.
         :param source: Source label (``"core"`` or ``"plugin"``).
         """
         assert self._registry is not None
         assert self._source_map is not None
         assert self._pagination_map is not None
 
-        try:
-            with open(path) as f:
-                data = json.load(f)
-        except FileNotFoundError:
-            logger.warning("Schema file not found: %s", path)
-            return
-        except json.JSONDecodeError:
-            logger.warning("Invalid JSON in schema file: %s", path)
+        models = data.get("models", {})
+        if not isinstance(models, dict):
+            logger.warning("Invalid schema structure: 'models' must be a dict")
             return
 
-        models = data.get("models", {})
         for model_name, model_data in models.items():
+            if model_name in self._registry:
+                logger.warning(
+                    "Model collision detected: %s from %s overwriting "
+                    "previous definition",
+                    model_name,
+                    source,
+                )
+            methods = model_data.get("methods", {})
+            if not isinstance(methods, dict):
+                logger.warning(
+                    "Invalid schema structure: methods for %s must be a dict",
+                    model_name,
+                )
+                continue
             self._registry[model_name] = model_data
             self._source_map[model_name] = source
             pagination = model_data.get("pagination")
@@ -327,3 +413,14 @@ class BlestaDiscovery:
                     f.write(json.dumps(entry, sort_keys=True) + "\n")
                     count += 1
         return count
+
+
+@lru_cache(maxsize=1)
+def _get_discovery() -> BlestaDiscovery:
+    """Return a cached :class:`BlestaDiscovery` singleton.
+
+    Uses :func:`functools.lru_cache` so the bundled schemas are parsed
+    only once per process, regardless of how many client instances call
+    :meth:`~BlestaRequest.call` or :meth:`~BlestaRequest.count_for`.
+    """
+    return BlestaDiscovery()

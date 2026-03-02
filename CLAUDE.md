@@ -31,6 +31,7 @@ uv build                                   # Build package
 - `src/blesta_sdk/_async_client.py` — `AsyncBlestaRequest`: async HTTP client (mirrors sync API, adds `get_all_fast()` and `get_report_series_concurrent()`)
 - `src/blesta_sdk/_response.py` — `BlestaResponse`: response parsing, CSV/JSON detection, error extraction, DataFrame conversion
 - `src/blesta_sdk/_discovery.py` — `BlestaDiscovery` and `MethodSpec`: schema-driven API introspection (lazy-loaded)
+- `src/blesta_sdk/_validation.py` — shared URL segment validation (used by both sync and async clients)
 - `src/blesta_sdk/_dateutil.py` — internal date range utilities for time-series reports
 - `src/blesta_sdk/_cli.py` — CLI entry point (registered as `blesta` in pyproject.toml)
 - `schemas/` — bundled JSON schemas (core: 63 models, plugin: 8 models) used by `BlestaDiscovery`
