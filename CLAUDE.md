@@ -19,19 +19,22 @@ uv sync                                    # Install all dependencies
 uv run pytest -v                           # Run tests
 uv run pytest -m "not integration"         # Skip live API integration tests
 uv run pytest --cov=blesta_sdk --cov-report=term-missing --cov-fail-under=97  # Coverage check
-uv run black src/ tests/                   # Format code
-uv run ruff check src/ tests/              # Lint
+uv run black src/ tests/ tools/             # Format code
+uv run ruff check src/ tests/ tools/       # Lint
 uv build                                   # Build package
 ```
 
 ## Project Structure
 
 - `src/blesta_sdk/__init__.py` — public API exports (`__all__`), lazy import for `AsyncBlestaRequest`
-- `src/blesta_sdk/_client.py` — `BlestaRequest`: sync HTTP client (GET/POST/PUT/DELETE, pagination, reports, batch extraction)
+- `src/blesta_sdk/_client.py` — `BlestaRequest`: sync HTTP client (GET/POST/PUT/DELETE, pagination, reports, batch extraction, schema-aware calls)
 - `src/blesta_sdk/_async_client.py` — `AsyncBlestaRequest`: async HTTP client (mirrors sync API, adds `get_all_fast()` and `get_report_series_concurrent()`)
-- `src/blesta_sdk/_response.py` — `BlestaResponse`: response parsing, CSV/JSON detection, error extraction
+- `src/blesta_sdk/_response.py` — `BlestaResponse`: response parsing, CSV/JSON detection, error extraction, DataFrame conversion
+- `src/blesta_sdk/_discovery.py` — `BlestaDiscovery` and `MethodSpec`: schema-driven API introspection (lazy-loaded)
 - `src/blesta_sdk/_dateutil.py` — internal date range utilities for time-series reports
 - `src/blesta_sdk/_cli.py` — CLI entry point (registered as `blesta` in pyproject.toml)
+- `schemas/` — bundled JSON schemas (core: 63 models, plugin: 8 models) used by `BlestaDiscovery`
+- `tools/` — schema extraction utilities (`extract_schema.py`, `extract_plugin_schema.py`, `_classify.py`)
 - `tests/` — unit tests (mocked) + one live integration test (`test_credentials`)
 - `benchmarks/` — performance benchmarks (pytest-benchmark, not collected in CI)
 
@@ -87,113 +90,6 @@ The programmatic API (`BlestaRequest` / `AsyncBlestaRequest`) takes these as con
 - `.github/workflows/publish.yml` — builds and publishes to PyPI on GitHub release
 - Uses `uv build` and `uv publish` with a `PYPI_TOKEN` secret
 
-## SDK Usage Reference
+## SDK Usage
 
-When writing code that uses `blesta_sdk`, follow these patterns.
-
-### Initialization
-
-All API calls go through `model`/`method` pairs that map to Blesta's REST routes (`/api/model/method.json`). For plugin models, use dot notation: `"plugin.model"`.
-
-```python
-from blesta_sdk import BlestaRequest
-
-api = BlestaRequest(
-    url="https://example.com/api",
-    user="api_user",
-    key="api_key",
-    auth_method="header",   # or "basic" (default)
-    timeout=30,             # seconds, default 30
-    max_retries=3,          # exponential backoff on 5xx/network errors
-)
-```
-
-Or as a context manager:
-
-```python
-with BlestaRequest(url, user, key) as api:
-    response = api.get("clients", "getList")
-```
-
-### Requests and Responses
-
-```python
-response = api.get("clients", "getList", {"page": 1})
-response = api.post("clients", "create", {"firstname": "John", ...})
-response = api.put("clients", "edit", {"client_id": 1, ...})
-response = api.delete("clients", "delete", {"client_id": 1})
-```
-
-Every method returns a `BlestaResponse` — even on network failure (`status_code=0`):
-
-```python
-response.status_code   # int: HTTP status code (0 on network error)
-response.data          # parsed JSON "response" field, or None
-response.raw           # raw response body as str
-response.errors()      # dict of errors, or None on success
-response.is_json       # bool
-response.is_csv        # bool
-response.csv_data      # list[dict] for CSV responses, or None
-```
-
-### Pagination
-
-```python
-# Iterator (memory-efficient)
-for client in api.iter_all("clients", "getList"):
-    print(client["id"])
-
-# Collect all pages into a list
-all_clients = api.get_all("clients", "getList")
-
-# Get a record count
-total = api.count("clients")  # calls getListCount, returns int
-```
-
-### Batch Extraction
-
-```python
-data = api.extract([
-    ("clients", "getList"),
-    ("invoices", "getList"),
-    ("transactions", "getList", {"status": "approved"}),
-])
-# data["clients.getList"] -> list of all clients
-```
-
-### Reports
-
-```python
-# Single report (returns CSV response)
-response = api.get_report("tax_liability", "2025-01-01", "2025-12-31")
-rows = response.csv_data  # list[dict[str, str]]
-
-# Monthly time-series (adds "_period" key to each row)
-rows = api.get_report_series("tax_liability", "2025-01", "2025-12")
-```
-
-### Async Client
-
-The async client mirrors the sync API. Install with `pip install blesta_sdk[async]`.
-
-```python
-from blesta_sdk import AsyncBlestaRequest
-
-async with AsyncBlestaRequest(url, user, key, auth_method="header") as api:
-    response = await api.get("clients", "getList")
-
-    # Async pagination
-    async for client in api.iter_all("clients", "getList"):
-        print(client["id"])
-
-    # Concurrent batch extraction
-    data = await api.extract([("clients", "getList"), ("invoices", "getList")])
-
-    # Concurrent pagination (count-first, then parallel page fetches)
-    all_items = await api.get_all_fast("invoices", "getList", batch_size=5)
-
-    # Concurrent monthly reports
-    rows = await api.get_report_series_concurrent(
-        "tax_liability", "2025-01", "2025-12", max_concurrency=4
-    )
-```
+See `SDK_USAGE.md` for detailed patterns and examples when writing code that uses this SDK (initialization, requests, pagination, reports, discovery, async client, etc.).

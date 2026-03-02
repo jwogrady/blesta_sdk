@@ -51,6 +51,7 @@ exclude = [
     ".vscode/",
     "coverage.json",
     "CLAUDE.md",
+    "SDK_USAGE.md",
     "tests/",
     "benchmarks/",
     "tools/",
