@@ -256,9 +256,7 @@ class BlestaRequest:
 
             if last_response is not None and last_response.status_code == 429:
                 try:
-                    retry_after = int(
-                        last_response.headers.get("Retry-After", "")
-                    )
+                    retry_after = int(last_response.headers.get("Retry-After", ""))
                 except (ValueError, TypeError):
                     retry_after = 0
                 if retry_after > 0:

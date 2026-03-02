@@ -2196,9 +2196,7 @@ def test_raise_for_status_auth_403():
 
 def test_raise_for_status_429_with_retry_after():
     """status_code 429 raises BlestaRateLimitError with retry_after parsed."""
-    response = BlestaResponse(
-        '{"error": "rate limited"}', 429, {"Retry-After": "120"}
-    )
+    response = BlestaResponse('{"error": "rate limited"}', 429, {"Retry-After": "120"})
     with pytest.raises(blesta_sdk.BlestaRateLimitError) as exc_info:
         response.raise_for_status()
     assert exc_info.value.status_code == 429
@@ -2244,9 +2242,7 @@ def test_raise_for_status_success_noop():
 
 def test_raise_on_error_raises_on_4xx():
     """raise_on_error=True causes submit() to raise on 4xx."""
-    api = BlestaRequest(
-        "https://test.example.com/api", "u", "k", raise_on_error=True
-    )
+    api = BlestaRequest("https://test.example.com/api", "u", "k", raise_on_error=True)
     with patch.object(api.session, "get") as mock_get:
         mock_get.return_value = Mock(
             text='{"errors": {"field": "bad"}}', status_code=400, headers={}
@@ -2258,9 +2254,7 @@ def test_raise_on_error_raises_on_4xx():
 
 def test_raise_on_error_raises_on_connection_error():
     """raise_on_error=True causes submit() to raise on network errors."""
-    api = BlestaRequest(
-        "https://test.example.com/api", "u", "k", raise_on_error=True
-    )
+    api = BlestaRequest("https://test.example.com/api", "u", "k", raise_on_error=True)
     with patch.object(api.session, "get") as mock_get:
         mock_get.side_effect = requests.ConnectionError("refused")
         with pytest.raises(blesta_sdk.BlestaConnectionError):

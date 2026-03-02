@@ -1380,7 +1380,9 @@ async def test_async_response_network_error_has_empty_headers(async_api):
     import httpx
 
     with patch.object(
-        async_api.client, "get", new_callable=AsyncMock,
+        async_api.client,
+        "get",
+        new_callable=AsyncMock,
         side_effect=httpx.ConnectError("connection refused"),
     ):
         response = await async_api.get("clients", "getList")
@@ -1464,9 +1466,7 @@ async def test_async_raise_on_error_raises_on_4xx():
     """raise_on_error=True causes submit() to raise on 4xx."""
     import blesta_sdk
 
-    api = AsyncBlestaRequest(
-        "https://example.com/api", "u", "k", raise_on_error=True
-    )
+    api = AsyncBlestaRequest("https://example.com/api", "u", "k", raise_on_error=True)
     mock_response = Mock(
         text='{"errors": {"field": "bad"}}', status_code=400, headers={}
     )
@@ -1486,12 +1486,12 @@ async def test_async_raise_on_error_raises_on_connection_error():
 
     import blesta_sdk
 
-    api = AsyncBlestaRequest(
-        "https://example.com/api", "u", "k", raise_on_error=True
-    )
+    api = AsyncBlestaRequest("https://example.com/api", "u", "k", raise_on_error=True)
     with (
         patch.object(
-            api.client, "get", new_callable=AsyncMock,
+            api.client,
+            "get",
+            new_callable=AsyncMock,
             side_effect=httpx.ConnectError("refused"),
         ),
         pytest.raises(blesta_sdk.BlestaConnectionError),
@@ -1517,9 +1517,7 @@ async def test_async_raise_on_error_429_has_retry_after():
     """raise_on_error=True populates retry_after from httpx headers."""
     import blesta_sdk
 
-    api = AsyncBlestaRequest(
-        "https://example.com/api", "u", "k", raise_on_error=True
-    )
+    api = AsyncBlestaRequest("https://example.com/api", "u", "k", raise_on_error=True)
     mock_response = Mock(
         text='{"error": "rate limited"}',
         status_code=429,
