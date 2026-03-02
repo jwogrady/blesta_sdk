@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-03-01
+
+### Added
+- `on_error` parameter on `get_all()` (sync and async). Passes through to `iter_all()` so callers can use `on_error="raise"` to get `PaginationError` with partial results instead of silent truncation. Defaults to `"warn"` (backward-compatible).
+
+### Fixed
+- Async `extract()` now gates concurrent targets through the client-level semaphore (`max_concurrency`), preventing request storms for large target lists. Previously, all targets were launched simultaneously with no concurrency limit.
+
 ## [0.5.0] - 2026-03-01
 
 ### Added

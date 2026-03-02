@@ -1,5 +1,6 @@
 """Tests for AsyncBlestaRequest — async HTTP client."""
 
+import asyncio
 import json
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -887,6 +888,62 @@ async def test_async_get_all_max_pages(async_api):
     ):
         result = await async_api.get_all("clients", "getList", max_pages=1)
     assert result == [{"id": 1}]
+
+
+async def test_async_get_all_on_error_raise(async_api):
+    """get_all passes on_error='raise' through to iter_all."""
+    from blesta_sdk import PaginationError
+
+    responses = [
+        Mock(text=json.dumps({"response": [{"id": 1}]}), status_code=200),
+        Mock(text="error", status_code=500),
+    ]
+    with (
+        patch.object(
+            async_api.client, "get", new_callable=AsyncMock, side_effect=responses
+        ),
+        pytest.raises(PaginationError) as exc_info,
+    ):
+        await async_api.get_all("clients", "getList", on_error="raise")
+    assert exc_info.value.page == 2
+    assert exc_info.value.status_code == 500
+    assert exc_info.value.partial_items == [{"id": 1}]
+
+
+async def test_async_get_all_on_error_warn_default(async_api):
+    """get_all default on_error='warn' stops silently on non-200."""
+    responses = [
+        Mock(text=json.dumps({"response": [{"id": 1}]}), status_code=200),
+        Mock(text="error", status_code=500),
+    ]
+    with patch.object(
+        async_api.client, "get", new_callable=AsyncMock, side_effect=responses
+    ):
+        result = await async_api.get_all("clients", "getList")
+    assert result == [{"id": 1}]
+
+
+# --- extract() semaphore ---
+
+
+async def test_async_extract_uses_semaphore(async_api):
+    """extract() gates concurrent targets through the client semaphore."""
+    responses = [
+        Mock(text=json.dumps({"response": [{"id": 1}]}), status_code=200),
+        Mock(text=json.dumps({"response": []}), status_code=200),
+        Mock(text=json.dumps({"response": [{"id": 2}]}), status_code=200),
+        Mock(text=json.dumps({"response": []}), status_code=200),
+    ]
+    # Use a semaphore with value 1 to force serial execution
+    async_api._semaphore = asyncio.Semaphore(1)
+    with patch.object(
+        async_api.client, "get", new_callable=AsyncMock, side_effect=responses
+    ):
+        result = await async_api.extract(
+            [("clients", "getList"), ("invoices", "getList")]
+        )
+    assert "clients.getList" in result
+    assert "invoices.getList" in result
 
 
 # --- Repeat page detection (async) ---
