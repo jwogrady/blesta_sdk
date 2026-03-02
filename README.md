@@ -68,7 +68,7 @@ response = api.delete("clients", "delete", {"client_id": 1})
 
 ### Schema-Aware Calls
 
-Use `call()` to let the SDK infer the correct HTTP method from the bundled API schema:
+Use `call()` to let the SDK infer the correct HTTP method from the bundled API schema. If a method is not in the schema, the SDK infers the verb from the method name (e.g. `get*` -> GET, `create*` -> POST):
 
 ```python
 # Automatically uses GET (inferred from schema)
@@ -187,7 +187,7 @@ For high-throughput workloads (pagination, batch extraction), tune the connectio
 api = BlestaRequest(url, user, key, pool_connections=20, pool_maxsize=20)
 ```
 
-Defaults are `10`/`10` (up from requests' default of `1`/`1`).
+Defaults are `10`/`10`.
 
 ### Authentication
 
@@ -353,7 +353,7 @@ Output is JSON to stdout. On errors, the error dict is printed as JSON and the p
 
 ## API Reference
 
-### `BlestaRequest(url, user, key, timeout=30, max_retries=0, pool_connections=10, pool_maxsize=10, auth_method="basic")`
+### `BlestaRequest(url, user, key, timeout=30, max_retries=0, retry_mutations=False, pool_connections=10, pool_maxsize=10, auth_method="basic")`
 
 | Method | Description |
 |---|---|
@@ -362,11 +362,12 @@ Output is JSON to stdout. On errors, the error dict is printed as JSON and the p
 | `put(model, method, args=None)` | PUT request (JSON body) |
 | `delete(model, method, args=None)` | DELETE request (JSON body) |
 | `submit(model, method, args=None, action="POST")` | Send request with explicit HTTP method |
-| `call(model, method, args=None, action=None)` | Schema-aware request (infers HTTP method) |
+| `call(model, method, args=None, action=None)` | Schema-aware request (infers HTTP method from schema, then method name) |
 | `count(model, method="getListCount", args=None)` | Fetch record count as `int` (`0` on error) |
 | `count_for(model, list_method="getList", args=None)` | Schema-aware count (auto-discovers count method) |
-| `iter_all(model, method, args=None, start_page=1)` | Paginate and yield individual results |
-| `get_all(model, method, args=None, start_page=1)` | Paginate and return all results as a list |
+| `iter_all(model, method, args=None, start_page=1, max_pages=None, on_error="warn")` | Paginate and yield individual results |
+| `iter_pages(model, method, args=None, start_page=1, max_pages=None, on_error="warn")` | Paginate and yield each page as a list |
+| `get_all(model, method, args=None, start_page=1, max_pages=None)` | Paginate and return all results as a list |
 | `call_all(model, method, args=None, start_page=1)` | Schema-aware pagination (equivalent to `get_all`) |
 | `extract(targets)` | Batch-fetch multiple paginated endpoints |
 | `get_report(report_type, start_date, end_date, extra_vars=None)` | Fetch a Blesta report (CSV) |
@@ -377,7 +378,7 @@ Output is JSON to stdout. On errors, the error dict is printed as JSON and the p
 
 Supports context manager (`with BlestaRequest(...) as api:`).
 
-### `AsyncBlestaRequest(url, user, key, timeout=30, max_retries=0, max_connections=10, max_keepalive_connections=10, auth_method="basic")`
+### `AsyncBlestaRequest(url, user, key, timeout=30, max_retries=0, retry_mutations=False, max_connections=10, max_keepalive_connections=10, max_concurrency=10, auth_method="basic")`
 
 Same methods as `BlestaRequest`, all `async`. Additional async-specific methods:
 
@@ -412,6 +413,15 @@ Same methods as `BlestaRequest`, all `async`. Additional async-specific methods:
 | `is_csv` | `bool` | `True` if response is CSV data |
 | `csv_data` | `list[dict] \| None` | Parsed CSV rows, or `None` |
 | `to_dataframe()` | `DataFrame` | Convert to pandas DataFrame (requires pandas) |
+
+### `__version__`
+
+The installed package version is available at runtime:
+
+```python
+import blesta_sdk
+print(blesta_sdk.__version__)  # e.g. "0.5.0"
+```
 
 ## Blesta API Reference
 

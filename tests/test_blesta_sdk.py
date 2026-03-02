@@ -8,7 +8,7 @@ import requests
 from requests.adapters import HTTPAdapter
 
 import blesta_sdk
-from blesta_sdk import BlestaRequest, BlestaResponse
+from blesta_sdk import BlestaDiscovery, BlestaRequest, BlestaResponse
 from blesta_sdk._cli import cli
 from blesta_sdk._dateutil import _month_boundaries
 
@@ -28,6 +28,7 @@ def test_all_exports():
         "BlestaRequest",
         "BlestaResponse",
         "MethodSpec",
+        "PaginationError",
         "__version__",
     }
 
@@ -277,7 +278,8 @@ def test_errors_returns_none_on_success():
 
 def test_errors_invalid_json():
     response = BlestaResponse("Invalid JSON", 200)
-    assert response.errors() == {"error": "Invalid JSON response"}
+    err = response.errors()
+    assert "Invalid JSON response:" in err["error"]
 
 
 def test_errors_fallback_non_200_without_errors_key():
@@ -355,9 +357,10 @@ def test_csv_response_no_errors():
 def test_csv_response_with_error_status():
     csv_text = '"id","name"\n"1","John"\n'
     response = BlestaResponse(csv_text, 500)
+    assert response.is_csv is False  # non-200 never classified as CSV
     errors = response.errors()
     assert errors is not None
-    assert "CSV response" in errors["error"]
+    assert "HTTP 500" in errors["error"]
 
 
 # --- BlestaResponse: edge cases ---
@@ -368,7 +371,7 @@ def test_empty_body_response():
     assert response.is_json is False
     assert response.is_csv is False
     assert response.data is None
-    assert response.errors() == {"error": "Invalid JSON response"}
+    assert response.errors() == {"error": "Empty response body"}
 
 
 def test_none_body_response():
@@ -377,7 +380,7 @@ def test_none_body_response():
     assert response.is_json is False
     assert response.is_csv is False
     assert response.data is None
-    assert response.errors() == {"error": "Invalid JSON response"}
+    assert response.errors() == {"error": "Empty response body"}
 
 
 # --- Pagination tests ---
@@ -1070,6 +1073,147 @@ def test_cli_last_request_on_error(cli_env, capsys):
     assert "Last Request Parameters:" in captured.out
 
 
+# --- CLI hardening tests ---
+
+
+def test_cli_param_missing_equals(cli_env, capsys):
+    """Param without '=' produces JSON error, not a stack trace."""
+    with (
+        patch(
+            "sys.argv",
+            [
+                "blesta",
+                "--model",
+                "clients",
+                "--method",
+                "getList",
+                "--params",
+                "id=1",
+                "badparam",
+                "status=active",
+            ],
+        ),
+        pytest.raises(SystemExit, match="1"),
+    ):
+        cli()
+    captured = capsys.readouterr()
+    output = json.loads(captured.out)
+    assert "expected key=value" in output["error"]
+    assert "badparam" in output["error"]
+    assert "Traceback" not in captured.err
+
+
+def test_cli_param_empty_string(cli_env, capsys):
+    """Empty string param produces JSON error, not a stack trace."""
+    with (
+        patch(
+            "sys.argv",
+            ["blesta", "--model", "clients", "--method", "getList", "--params", ""],
+        ),
+        pytest.raises(SystemExit, match="1"),
+    ):
+        cli()
+    captured = capsys.readouterr()
+    output = json.loads(captured.out)
+    assert "expected key=value" in output["error"]
+    assert "Traceback" not in captured.err
+
+
+def test_cli_param_empty_key(cli_env, capsys):
+    """Param '=broken' (empty key) produces JSON error."""
+    with (
+        patch(
+            "sys.argv",
+            [
+                "blesta",
+                "--model",
+                "clients",
+                "--method",
+                "getList",
+                "--params",
+                "=broken",
+            ],
+        ),
+        pytest.raises(SystemExit, match="1"),
+    ):
+        cli()
+    captured = capsys.readouterr()
+    output = json.loads(captured.out)
+    assert "key cannot be empty" in output["error"]
+    assert "Traceback" not in captured.err
+
+
+def test_cli_param_duplicate_key(cli_env, capsys, caplog):
+    """Duplicate param key logs a warning; last value wins."""
+    mock_response = BlestaResponse('{"response": {"ok": true}}', 200)
+    with (
+        patch(
+            "sys.argv",
+            [
+                "blesta",
+                "--model",
+                "clients",
+                "--method",
+                "getList",
+                "--params",
+                "id=1",
+                "id=2",
+            ],
+        ),
+        patch("blesta_sdk._cli.BlestaRequest") as MockApi,
+        caplog.at_level("WARNING", logger="blesta_sdk._cli"),
+    ):
+        MockApi.return_value.submit.return_value = mock_response
+        cli()
+
+    # Last value wins — id=2 is sent.
+    call_args = MockApi.return_value.submit.call_args
+    assert call_args[0][2] == {"id": "2"}
+    assert "Duplicate CLI param" in caplog.text
+
+
+def test_cli_unexpected_exception_produces_json(cli_env, capsys):
+    """Unexpected exception is caught and emitted as JSON, no stack trace."""
+    with (
+        patch(
+            "sys.argv",
+            ["blesta", "--model", "clients", "--method", "getList"],
+        ),
+        patch("blesta_sdk._cli.BlestaRequest") as MockApi,
+        pytest.raises(SystemExit, match="1"),
+    ):
+        MockApi.side_effect = RuntimeError("boom")
+        cli()
+    captured = capsys.readouterr()
+    output = json.loads(captured.out)
+    assert output["error"] == "boom"
+    assert "Traceback" not in captured.err
+
+
+def test_cli_action_case_insensitive(cli_env):
+    """--action accepts lowercase and normalizes to uppercase."""
+    mock_response = BlestaResponse('{"response": {"ok": true}}', 200)
+    with (
+        patch(
+            "sys.argv",
+            [
+                "blesta",
+                "--model",
+                "clients",
+                "--method",
+                "create",
+                "--action",
+                "post",
+            ],
+        ),
+        patch("blesta_sdk._cli.BlestaRequest") as MockApi,
+    ):
+        MockApi.return_value.submit.return_value = mock_response
+        cli()
+
+    MockApi.return_value.submit.assert_called_once_with("clients", "create", {}, "POST")
+
+
 # --- __repr__ tests ---
 
 
@@ -1115,8 +1259,9 @@ def test_submit_no_retry_by_default(blesta_request):
     assert mock_get.call_count == 1
 
 
+@patch("blesta_sdk._client.random.random", return_value=1.0)
 @patch("blesta_sdk._client.time.sleep")
-def test_submit_retry_on_network_error(mock_sleep):
+def test_submit_retry_on_network_error(mock_sleep, _mock_random):
     api = BlestaRequest("https://test.example.com/api", "u", "k", max_retries=2)
     with patch.object(api.session, "get") as mock_get:
         mock_get.side_effect = [
@@ -1130,8 +1275,9 @@ def test_submit_retry_on_network_error(mock_sleep):
     mock_sleep.assert_called_once_with(1)
 
 
+@patch("blesta_sdk._client.random.random", return_value=1.0)
 @patch("blesta_sdk._client.time.sleep")
-def test_submit_retry_on_500(mock_sleep):
+def test_submit_retry_on_500(mock_sleep, _mock_random):
     api = BlestaRequest("https://test.example.com/api", "u", "k", max_retries=2)
     with patch.object(api.session, "get") as mock_get:
         mock_get.side_effect = [
@@ -1157,8 +1303,9 @@ def test_submit_no_retry_on_4xx(mock_sleep):
     mock_sleep.assert_not_called()
 
 
+@patch("blesta_sdk._client.random.random", return_value=1.0)
 @patch("blesta_sdk._client.time.sleep")
-def test_submit_retry_exhausted(mock_sleep):
+def test_submit_retry_exhausted(mock_sleep, _mock_random):
     api = BlestaRequest("https://test.example.com/api", "u", "k", max_retries=2)
     with patch.object(api.session, "get") as mock_get:
         mock_get.side_effect = requests.ConnectionError("refused")
@@ -1169,9 +1316,16 @@ def test_submit_retry_exhausted(mock_sleep):
     assert mock_sleep.call_count == 2
 
 
+@patch("blesta_sdk._client.random.random", return_value=1.0)
 @patch("blesta_sdk._client.time.sleep")
-def test_submit_retry_backoff_timing(mock_sleep):
-    api = BlestaRequest("https://test.example.com/api", "u", "k", max_retries=3)
+def test_submit_retry_backoff_timing(mock_sleep, _mock_random):
+    api = BlestaRequest(
+        "https://test.example.com/api",
+        "u",
+        "k",
+        max_retries=3,
+        retry_mutations=True,
+    )
     with patch.object(api.session, "post") as mock_post:
         mock_post.side_effect = requests.Timeout("timed out")
         api.post("clients", "create")
@@ -1365,6 +1519,36 @@ def test_count_for_fallback(blesta_request):
     mock_count.assert_called_once_with("clients", "getAllCount", None)
 
 
+def test_call_heuristic_fallback(blesta_request):
+    """call() uses prefix heuristic when schema cannot resolve the method."""
+    with (
+        patch.object(blesta_request.session, "delete") as mock_delete,
+        patch(
+            "blesta_sdk._discovery.BlestaDiscovery.resolve_http_method",
+            return_value="_UNRESOLVED_",
+        ),
+    ):
+        mock_delete.return_value = Mock(text='{"response": null}', status_code=200)
+        response = blesta_request.call("clients", "deleteService")
+    assert response.status_code == 200
+    mock_delete.assert_called_once()
+
+
+def test_call_ambiguous_method_defaults_to_post(blesta_request):
+    """call() defaults to POST with warning when method name is ambiguous."""
+    with (
+        patch.object(blesta_request.session, "post") as mock_post,
+        patch(
+            "blesta_sdk._discovery.BlestaDiscovery.resolve_http_method",
+            return_value="_UNRESOLVED_",
+        ),
+    ):
+        mock_post.return_value = Mock(text='{"response": null}', status_code=200)
+        response = blesta_request.call("clients", "doSomething")
+    assert response.status_code == 200
+    mock_post.assert_called_once()
+
+
 @pytest.mark.integration
 def test_credentials(blesta_request):
     response = blesta_request.get("clients", "getList", {"status": "active"})
@@ -1373,6 +1557,406 @@ def test_credentials(blesta_request):
     assert response.data is not None
 
     print(json.dumps(response.data, indent=4))
+
+
+# --- PaginationError ---
+
+
+def test_pagination_error_attributes():
+    """PaginationError stores page, status_code, and partial_items."""
+    from blesta_sdk import PaginationError
+
+    err = PaginationError(
+        "HTTP 500 on page 3",
+        page=3,
+        status_code=500,
+        partial_items=[{"id": 1}, {"id": 2}],
+    )
+    assert err.page == 3
+    assert err.status_code == 500
+    assert err.partial_items == [{"id": 1}, {"id": 2}]
+    assert str(err) == "HTTP 500 on page 3"
+
+
+def test_pagination_error_default_partial_items():
+    """PaginationError defaults partial_items to empty list."""
+    from blesta_sdk import PaginationError
+
+    err = PaginationError("fail", page=1, status_code=500)
+    assert err.partial_items == []
+
+
+def test_iter_all_on_error_raise(blesta_request):
+    """iter_all with on_error='raise' raises PaginationError with partial items."""
+    from blesta_sdk import PaginationError
+
+    responses = [
+        Mock(text=json.dumps({"response": [{"id": 1}, {"id": 2}]}), status_code=200),
+        Mock(text="error", status_code=500),
+    ]
+    with (
+        patch.object(blesta_request.session, "get", side_effect=responses),
+        pytest.raises(PaginationError) as exc_info,
+    ):
+        list(blesta_request.iter_all("clients", "getList", on_error="raise"))
+    assert exc_info.value.page == 2
+    assert exc_info.value.status_code == 500
+    assert exc_info.value.partial_items == [{"id": 1}, {"id": 2}]
+
+
+def test_iter_all_on_error_warn_is_default(blesta_request):
+    """iter_all with default on_error='warn' stops without raising."""
+    responses = [
+        Mock(text=json.dumps({"response": [{"id": 1}]}), status_code=200),
+        Mock(text="error", status_code=500),
+    ]
+    with patch.object(blesta_request.session, "get", side_effect=responses):
+        result = list(blesta_request.iter_all("clients", "getList"))
+    assert result == [{"id": 1}]
+
+
+# --- max_pages ---
+
+
+def test_iter_all_max_pages(blesta_request):
+    """iter_all stops after max_pages."""
+    responses = [
+        Mock(text=json.dumps({"response": [{"id": 1}]}), status_code=200),
+        Mock(text=json.dumps({"response": [{"id": 2}]}), status_code=200),
+        Mock(text=json.dumps({"response": [{"id": 3}]}), status_code=200),
+    ]
+    with patch.object(blesta_request.session, "get", side_effect=responses):
+        result = list(blesta_request.iter_all("clients", "getList", max_pages=2))
+    assert result == [{"id": 1}, {"id": 2}]
+
+
+def test_get_all_max_pages(blesta_request):
+    """get_all passes max_pages through."""
+    responses = [
+        Mock(text=json.dumps({"response": [{"id": 1}]}), status_code=200),
+        Mock(text=json.dumps({"response": [{"id": 2}]}), status_code=200),
+    ]
+    with patch.object(blesta_request.session, "get", side_effect=responses):
+        result = blesta_request.get_all("clients", "getList", max_pages=1)
+    assert result == [{"id": 1}]
+
+
+# --- Repeat page detection ---
+
+
+def test_iter_all_repeat_detection(blesta_request):
+    """iter_all stops after 3 identical consecutive pages."""
+    same_data = [{"id": 1}]
+    responses = [
+        Mock(text=json.dumps({"response": same_data}), status_code=200)
+        for _ in range(5)
+    ]
+    with patch.object(blesta_request.session, "get", side_effect=responses):
+        result = list(blesta_request.iter_all("clients", "getList"))
+    # Page 1: yield, repeat_count=0
+    # Page 2: match, repeat_count=1, yield
+    # Page 3: match, repeat_count=2, yield
+    # Page 4: match, repeat_count=3 >= 3, abort before yield
+    assert result == [{"id": 1}, {"id": 1}, {"id": 1}]
+
+
+def test_iter_all_repeat_resets_on_different_data(blesta_request):
+    """Repeat counter resets when a different page appears."""
+    responses = [
+        Mock(text=json.dumps({"response": [{"id": 1}]}), status_code=200),
+        Mock(text=json.dumps({"response": [{"id": 1}]}), status_code=200),
+        Mock(text=json.dumps({"response": [{"id": 2}]}), status_code=200),
+        Mock(text=json.dumps({"response": []}), status_code=200),
+    ]
+    with patch.object(blesta_request.session, "get", side_effect=responses):
+        result = list(blesta_request.iter_all("clients", "getList"))
+    assert result == [{"id": 1}, {"id": 1}, {"id": 2}]
+
+
+# --- iter_pages ---
+
+
+def test_iter_pages(blesta_request):
+    """iter_pages yields each page as a list."""
+    responses = [
+        Mock(text=json.dumps({"response": [{"id": 1}, {"id": 2}]}), status_code=200),
+        Mock(text=json.dumps({"response": [{"id": 3}]}), status_code=200),
+        Mock(text=json.dumps({"response": []}), status_code=200),
+    ]
+    with patch.object(blesta_request.session, "get", side_effect=responses):
+        pages = list(blesta_request.iter_pages("clients", "getList"))
+    assert pages == [[{"id": 1}, {"id": 2}], [{"id": 3}]]
+
+
+def test_iter_pages_max_pages(blesta_request):
+    """iter_pages stops after max_pages."""
+    responses = [
+        Mock(text=json.dumps({"response": [{"id": 1}]}), status_code=200),
+        Mock(text=json.dumps({"response": [{"id": 2}]}), status_code=200),
+    ]
+    with patch.object(blesta_request.session, "get", side_effect=responses):
+        pages = list(blesta_request.iter_pages("clients", "getList", max_pages=1))
+    assert pages == [[{"id": 1}]]
+
+
+def test_iter_pages_stops_on_error(blesta_request):
+    """iter_pages stops on non-200 status."""
+    responses = [
+        Mock(text=json.dumps({"response": [{"id": 1}]}), status_code=200),
+        Mock(text="error", status_code=500),
+    ]
+    with patch.object(blesta_request.session, "get", side_effect=responses):
+        pages = list(blesta_request.iter_pages("clients", "getList"))
+    assert pages == [[{"id": 1}]]
+
+
+def test_iter_pages_single_object(blesta_request):
+    """iter_pages wraps single object in a list and stops."""
+    mock_resp = Mock(
+        text=json.dumps({"response": {"id": 1, "name": "test"}}), status_code=200
+    )
+    with patch.object(blesta_request.session, "get", return_value=mock_resp):
+        pages = list(blesta_request.iter_pages("clients", "get"))
+    assert pages == [[{"id": 1, "name": "test"}]]
+
+
+def test_iter_pages_on_error_raise(blesta_request):
+    """iter_pages with on_error='raise' raises PaginationError."""
+    from blesta_sdk import PaginationError
+
+    responses = [
+        Mock(text=json.dumps({"response": [{"id": 1}]}), status_code=200),
+        Mock(text="error", status_code=500),
+    ]
+    with (
+        patch.object(blesta_request.session, "get", side_effect=responses),
+        pytest.raises(PaginationError) as exc_info,
+    ):
+        list(blesta_request.iter_pages("clients", "getList", on_error="raise"))
+    assert exc_info.value.page == 2
+    assert exc_info.value.status_code == 500
+
+
+def test_iter_pages_repeat_detection(blesta_request):
+    """iter_pages stops after 3 identical consecutive pages."""
+    same_data = [{"id": 1}]
+    responses = [
+        Mock(text=json.dumps({"response": same_data}), status_code=200)
+        for _ in range(5)
+    ]
+    with patch.object(blesta_request.session, "get", side_effect=responses):
+        pages = list(blesta_request.iter_pages("clients", "getList"))
+    assert pages == [[{"id": 1}], [{"id": 1}], [{"id": 1}]]
+
+
+# --- Retry safety (idempotent-only) ---
+
+
+@patch("blesta_sdk._client.random.random", return_value=1.0)
+@patch("blesta_sdk._client.time.sleep")
+def test_post_not_retried_by_default(mock_sleep, _mock_random):
+    """POST is not retried when retry_mutations=False (default)."""
+    api = BlestaRequest("https://test.example.com/api", "u", "k", max_retries=3)
+    with patch.object(api.session, "post") as mock_post:
+        mock_post.return_value = Mock(text="error", status_code=500)
+        response = api.post("clients", "create")
+    assert response.status_code == 500
+    assert mock_post.call_count == 1
+    mock_sleep.assert_not_called()
+
+
+@patch("blesta_sdk._client.random.random", return_value=1.0)
+@patch("blesta_sdk._client.time.sleep")
+def test_put_not_retried_by_default(mock_sleep, _mock_random):
+    """PUT is not retried when retry_mutations=False (default)."""
+    api = BlestaRequest("https://test.example.com/api", "u", "k", max_retries=3)
+    with patch.object(api.session, "put") as mock_put:
+        mock_put.return_value = Mock(text="error", status_code=500)
+        response = api.put("clients", "edit")
+    assert response.status_code == 500
+    assert mock_put.call_count == 1
+    mock_sleep.assert_not_called()
+
+
+@patch("blesta_sdk._client.random.random", return_value=1.0)
+@patch("blesta_sdk._client.time.sleep")
+def test_retry_mutations_enables_post_retry(mock_sleep, _mock_random):
+    """POST is retried when retry_mutations=True."""
+    api = BlestaRequest(
+        "https://test.example.com/api",
+        "u",
+        "k",
+        max_retries=1,
+        retry_mutations=True,
+    )
+    with patch.object(api.session, "post") as mock_post:
+        mock_post.side_effect = [
+            Mock(text="error", status_code=500),
+            Mock(text='{"response": "ok"}', status_code=200),
+        ]
+        response = api.post("clients", "create")
+    assert response.status_code == 200
+    assert mock_post.call_count == 2
+    mock_sleep.assert_called_once()
+
+
+@patch("blesta_sdk._client.random.random", return_value=0.0)
+@patch("blesta_sdk._client.time.sleep")
+def test_jitter_applies_half_minimum(mock_sleep, _mock_random):
+    """With random()=0, sleep is base_delay * 0.5 (minimum jitter)."""
+    api = BlestaRequest("https://test.example.com/api", "u", "k", max_retries=1)
+    with patch.object(api.session, "get") as mock_get:
+        mock_get.side_effect = [
+            Mock(text="error", status_code=500),
+            Mock(text='{"response": []}', status_code=200),
+        ]
+        api.get("clients", "getList")
+    # base_delay=1, jitter: 1 * (0.5 + 0.0 * 0.5) = 0.5
+    mock_sleep.assert_called_once_with(0.5)
+
+
+# --- free_raw ---
+
+
+def test_free_raw_releases_text():
+    """free_raw() sets raw to empty string."""
+    resp = BlestaResponse('{"response": [1, 2, 3]}', 200)
+    assert resp.raw == '{"response": [1, 2, 3]}'
+    resp.free_raw()
+    assert resp.raw == ""
+
+
+def test_free_raw_preserves_parsed_data():
+    """Parsed data still accessible after free_raw()."""
+    resp = BlestaResponse('{"response": [1, 2, 3]}', 200)
+    resp.free_raw()
+    assert resp.data == [1, 2, 3]
+    assert resp.is_json is True
+    assert resp.status_code == 200
+
+
+def test_free_raw_preserves_csv_data():
+    """CSV data still accessible after free_raw()."""
+    resp = BlestaResponse("Name,Age\nAlice,30\nBob,25", 200)
+    resp.free_raw()
+    assert resp.csv_data == [
+        {"Name": "Alice", "Age": "30"},
+        {"Name": "Bob", "Age": "25"},
+    ]
+
+
+# --- CSV mutation fix ---
+
+
+def test_report_series_no_csv_mutation():
+    """get_report_series does not mutate cached CSV row dicts."""
+    csv_text = "Package,Revenue\nPkg1,100"
+    api = BlestaRequest("https://test.example.com/api", "u", "k")
+    mock_resp = Mock(text=csv_text, status_code=200)
+    with patch.object(api.session, "get", return_value=mock_resp):
+        rows = api.get_report_series("pkg_rev", "2025-01", "2025-02")
+
+    # Verify _period was added to returned rows
+    assert rows[0]["_period"] == "2025-01"
+    assert rows[1]["_period"] == "2025-02"
+
+    # Verify original BlestaResponse csv_data is not mutated
+    original = BlestaResponse(csv_text, 200)
+    assert "_period" not in original.csv_data[0]
+
+
+# --- Discovery caching ---
+
+
+def test_discovery_cached():
+    """_get_discovery() returns the same instance across client instances."""
+    from blesta_sdk._discovery import _get_discovery
+
+    _get_discovery.cache_clear()
+    api1 = BlestaRequest("https://test.example.com/api", "u", "k")
+    api2 = BlestaRequest("https://other.example.com/api", "u", "k")
+    d1 = api1._get_discovery()
+    d2 = api2._get_discovery()
+    assert d1 is d2
+    _get_discovery.cache_clear()
+
+
+def test_discovery_init_called_once():
+    """BlestaDiscovery __init__ called once across multiple call()s."""
+    from blesta_sdk._discovery import _get_discovery
+
+    _get_discovery.cache_clear()
+    init_count = 0
+    original_init = BlestaDiscovery.__init__
+
+    def counting_init(self, *args, **kwargs):
+        nonlocal init_count
+        init_count += 1
+        original_init(self, *args, **kwargs)
+
+    with patch.object(BlestaDiscovery, "__init__", counting_init):
+        api = BlestaRequest("https://test.example.com/api", "u", "k")
+        with patch.object(api, "submit", return_value=Mock()):
+            api.call("clients", "getList")
+            api.call("invoices", "getList")
+            api.call("services", "create")
+    assert init_count == 1
+    _get_discovery.cache_clear()
+
+
+# --- URL validation (security) ---
+
+
+@pytest.mark.parametrize(
+    "model,method",
+    [
+        ("http://evil.com/x", "getList"),
+        ("//evil.com/x", "getList"),
+        ("/admin", "getList"),
+        ("../internal", "getList"),
+        ("clients", "../../etc/passwd"),
+        ("clients", "/deleteAll"),
+        ("clients", "http://evil.com"),
+        ("..\\internal", "getList"),
+        ("clients", "..\\secret"),
+        ("", "getList"),
+        ("clients", ""),
+    ],
+)
+def test_url_validation_rejects_unsafe_segments(blesta_request, model, method):
+    with pytest.raises(ValueError):
+        blesta_request.submit(model, method)
+
+
+def test_url_validation_allows_valid_segments():
+    api = BlestaRequest("https://example.com/api", "u", "k")
+    api._validate_segment("clients", "model")
+    api._validate_segment("plugin.model", "model")
+    api._validate_segment("getList", "method")
+    api._validate_segment("getListCount", "method")
+    api._validate_segment("report_manager", "model")
+
+
+def test_url_construction_uses_concatenation():
+    """Constructed URL uses string concat, not urljoin."""
+    api = BlestaRequest("https://example.com/api", "u", "k")
+    with patch.object(api.session, "get") as mock:
+        mock.return_value = Mock(text='{"response": {}}', status_code=200)
+        api.get("clients", "getList")
+    called_url = mock.call_args[0][0]
+    assert called_url == "https://example.com/api/clients/getList.json"
+
+
+def test_url_construction_plugin_model():
+    """Plugin dot notation produces correct URL."""
+    api = BlestaRequest("https://example.com/api", "u", "k")
+    with patch.object(api.session, "get") as mock:
+        mock.return_value = Mock(text='{"response": {}}', status_code=200)
+        api.get("support_manager.tickets", "getList")
+    called_url = mock.call_args[0][0]
+    assert called_url == (
+        "https://example.com/api/support_manager.tickets/getList.json"
+    )
 
 
 if __name__ == "__main__":

@@ -2,6 +2,7 @@
 
 from ._client import BlestaRequest
 from ._discovery import BlestaDiscovery, MethodSpec
+from ._exceptions import PaginationError
 from ._response import BlestaResponse
 
 __all__ = [
@@ -10,6 +11,7 @@ __all__ = [
     "BlestaRequest",
     "BlestaResponse",
     "MethodSpec",
+    "PaginationError",
     "__version__",
 ]
 

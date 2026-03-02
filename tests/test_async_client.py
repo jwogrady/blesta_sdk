@@ -151,8 +151,9 @@ async def test_async_network_error(async_api):
 # --- Retry ---
 
 
+@patch("blesta_sdk._async_client.random.random", return_value=1.0)
 @patch("blesta_sdk._async_client.asyncio.sleep", new_callable=AsyncMock)
-async def test_async_retry_on_500(mock_sleep):
+async def test_async_retry_on_500(mock_sleep, _mock_random):
     """Retries on 5xx, succeeds on second attempt."""
     api = AsyncBlestaRequest("https://example.com/api", "u", "k", max_retries=2)
     responses = [
@@ -165,8 +166,9 @@ async def test_async_retry_on_500(mock_sleep):
     mock_sleep.assert_called_once_with(1)
 
 
+@patch("blesta_sdk._async_client.random.random", return_value=1.0)
 @patch("blesta_sdk._async_client.asyncio.sleep", new_callable=AsyncMock)
-async def test_async_retry_exhausted(mock_sleep):
+async def test_async_retry_exhausted(mock_sleep, _mock_random):
     """Returns last response after all retries fail."""
     api = AsyncBlestaRequest("https://example.com/api", "u", "k", max_retries=2)
     mock_response = Mock(text="error", status_code=502)
@@ -573,8 +575,9 @@ async def test_async_count_non_numeric(async_api):
 # --- retry edge cases ---
 
 
+@patch("blesta_sdk._async_client.random.random", return_value=1.0)
 @patch("blesta_sdk._async_client.asyncio.sleep", new_callable=AsyncMock)
-async def test_async_retry_on_network_error(mock_sleep):
+async def test_async_retry_on_network_error(mock_sleep, _mock_random):
     """Retries on network error, succeeds on second attempt."""
     import httpx
 
@@ -787,3 +790,401 @@ async def test_async_count_for_fallback(async_api):
         result = await async_api.count_for("clients", "getAll")
     assert result == 5
     mock_count.assert_called_once_with("clients", "getAllCount", None)
+
+
+async def test_async_call_heuristic_fallback(async_api):
+    """call() uses prefix heuristic when schema cannot resolve the method."""
+    mock_response = Mock(text='{"response": null}', status_code=200)
+    with (
+        patch.object(
+            async_api.client,
+            "delete",
+            new_callable=AsyncMock,
+            return_value=mock_response,
+        ) as mock_delete,
+        patch(
+            "blesta_sdk._discovery.BlestaDiscovery.resolve_http_method",
+            return_value="_UNRESOLVED_",
+        ),
+    ):
+        response = await async_api.call("clients", "deleteService")
+    assert response.status_code == 200
+    mock_delete.assert_called_once()
+
+
+async def test_async_call_ambiguous_method_defaults_to_post(async_api):
+    """call() defaults to POST with warning when method name is ambiguous."""
+    mock_response = Mock(text='{"response": null}', status_code=200)
+    with (
+        patch.object(
+            async_api.client,
+            "post",
+            new_callable=AsyncMock,
+            return_value=mock_response,
+        ) as mock_post,
+        patch(
+            "blesta_sdk._discovery.BlestaDiscovery.resolve_http_method",
+            return_value="_UNRESOLVED_",
+        ),
+    ):
+        response = await async_api.call("clients", "doSomething")
+    assert response.status_code == 200
+    mock_post.assert_called_once()
+
+
+# --- PaginationError (async) ---
+
+
+async def test_async_iter_all_on_error_raise(async_api):
+    """iter_all with on_error='raise' raises PaginationError with partial items."""
+    from blesta_sdk import PaginationError
+
+    responses = [
+        Mock(text=json.dumps({"response": [{"id": 1}]}), status_code=200),
+        Mock(text="error", status_code=500),
+    ]
+    with (
+        patch.object(
+            async_api.client, "get", new_callable=AsyncMock, side_effect=responses
+        ),
+        pytest.raises(PaginationError) as exc_info,
+    ):
+        _ = [
+            item
+            async for item in async_api.iter_all("clients", "getList", on_error="raise")
+        ]
+    assert exc_info.value.page == 2
+    assert exc_info.value.status_code == 500
+    assert exc_info.value.partial_items == [{"id": 1}]
+
+
+# --- max_pages (async) ---
+
+
+async def test_async_iter_all_max_pages(async_api):
+    """iter_all stops after max_pages."""
+    responses = [
+        Mock(text=json.dumps({"response": [{"id": 1}]}), status_code=200),
+        Mock(text=json.dumps({"response": [{"id": 2}]}), status_code=200),
+        Mock(text=json.dumps({"response": [{"id": 3}]}), status_code=200),
+    ]
+    with patch.object(
+        async_api.client, "get", new_callable=AsyncMock, side_effect=responses
+    ):
+        result = [
+            item async for item in async_api.iter_all("clients", "getList", max_pages=2)
+        ]
+    assert result == [{"id": 1}, {"id": 2}]
+
+
+async def test_async_get_all_max_pages(async_api):
+    """get_all passes max_pages through."""
+    responses = [
+        Mock(text=json.dumps({"response": [{"id": 1}]}), status_code=200),
+    ]
+    with patch.object(
+        async_api.client, "get", new_callable=AsyncMock, side_effect=responses
+    ):
+        result = await async_api.get_all("clients", "getList", max_pages=1)
+    assert result == [{"id": 1}]
+
+
+# --- Repeat page detection (async) ---
+
+
+async def test_async_iter_all_repeat_detection(async_api):
+    """iter_all stops after 3 identical consecutive pages."""
+    same_data = [{"id": 1}]
+    responses = [
+        Mock(text=json.dumps({"response": same_data}), status_code=200)
+        for _ in range(5)
+    ]
+    with patch.object(
+        async_api.client, "get", new_callable=AsyncMock, side_effect=responses
+    ):
+        result = [item async for item in async_api.iter_all("clients", "getList")]
+    assert result == [{"id": 1}, {"id": 1}, {"id": 1}]
+
+
+# --- iter_pages (async) ---
+
+
+async def test_async_iter_pages(async_api):
+    """iter_pages yields each page as a list."""
+    responses = [
+        Mock(text=json.dumps({"response": [{"id": 1}, {"id": 2}]}), status_code=200),
+        Mock(text=json.dumps({"response": [{"id": 3}]}), status_code=200),
+        Mock(text=json.dumps({"response": []}), status_code=200),
+    ]
+    with patch.object(
+        async_api.client, "get", new_callable=AsyncMock, side_effect=responses
+    ):
+        pages = [p async for p in async_api.iter_pages("clients", "getList")]
+    assert pages == [[{"id": 1}, {"id": 2}], [{"id": 3}]]
+
+
+async def test_async_iter_pages_max_pages(async_api):
+    """iter_pages stops after max_pages."""
+    responses = [
+        Mock(text=json.dumps({"response": [{"id": 1}]}), status_code=200),
+        Mock(text=json.dumps({"response": [{"id": 2}]}), status_code=200),
+    ]
+    with patch.object(
+        async_api.client, "get", new_callable=AsyncMock, side_effect=responses
+    ):
+        pages = [
+            p async for p in async_api.iter_pages("clients", "getList", max_pages=1)
+        ]
+    assert pages == [[{"id": 1}]]
+
+
+async def test_async_iter_pages_single_object(async_api):
+    """iter_pages wraps single object in list."""
+    mock_resp = Mock(text=json.dumps({"response": {"id": 1}}), status_code=200)
+    with patch.object(
+        async_api.client, "get", new_callable=AsyncMock, return_value=mock_resp
+    ):
+        pages = [p async for p in async_api.iter_pages("clients", "get")]
+    assert pages == [[{"id": 1}]]
+
+
+async def test_async_iter_pages_on_error_raise(async_api):
+    """iter_pages with on_error='raise' raises PaginationError."""
+    from blesta_sdk import PaginationError
+
+    responses = [
+        Mock(text=json.dumps({"response": [{"id": 1}]}), status_code=200),
+        Mock(text="error", status_code=500),
+    ]
+    with (
+        patch.object(
+            async_api.client, "get", new_callable=AsyncMock, side_effect=responses
+        ),
+        pytest.raises(PaginationError) as exc_info,
+    ):
+        _ = [
+            p
+            async for p in async_api.iter_pages("clients", "getList", on_error="raise")
+        ]
+    assert exc_info.value.page == 2
+    assert exc_info.value.status_code == 500
+
+
+async def test_async_iter_pages_repeat_detection(async_api):
+    """iter_pages stops after 3 identical consecutive pages."""
+    same_data = [{"id": 1}]
+    responses = [
+        Mock(text=json.dumps({"response": same_data}), status_code=200)
+        for _ in range(5)
+    ]
+    with patch.object(
+        async_api.client, "get", new_callable=AsyncMock, side_effect=responses
+    ):
+        pages = [p async for p in async_api.iter_pages("clients", "getList")]
+    assert pages == [[{"id": 1}], [{"id": 1}], [{"id": 1}]]
+
+
+# --- Retry safety (async, idempotent-only) ---
+
+
+@patch("blesta_sdk._async_client.random.random", return_value=1.0)
+@patch("blesta_sdk._async_client.asyncio.sleep", new_callable=AsyncMock)
+async def test_async_post_not_retried_by_default(mock_sleep, _mock_random):
+    """POST is not retried when retry_mutations=False (default)."""
+    api = AsyncBlestaRequest("https://example.com/api", "u", "k", max_retries=3)
+    mock_response = Mock(text="error", status_code=500)
+    with patch.object(
+        api.client, "post", new_callable=AsyncMock, return_value=mock_response
+    ) as mock_post:
+        response = await api.post("clients", "create")
+    assert response.status_code == 500
+    assert mock_post.call_count == 1
+    mock_sleep.assert_not_called()
+
+
+@patch("blesta_sdk._async_client.random.random", return_value=1.0)
+@patch("blesta_sdk._async_client.asyncio.sleep", new_callable=AsyncMock)
+async def test_async_retry_mutations(mock_sleep, _mock_random):
+    """POST is retried when retry_mutations=True."""
+    api = AsyncBlestaRequest(
+        "https://example.com/api",
+        "u",
+        "k",
+        max_retries=1,
+        retry_mutations=True,
+    )
+    responses = [
+        Mock(text="error", status_code=500),
+        Mock(text='{"response": "ok"}', status_code=200),
+    ]
+    with patch.object(
+        api.client, "post", new_callable=AsyncMock, side_effect=responses
+    ):
+        response = await api.post("clients", "create")
+    assert response.status_code == 200
+    mock_sleep.assert_called_once()
+
+
+# --- get_all_fast verify ---
+
+
+async def test_async_get_all_fast_verify_detects_change(async_api):
+    """get_all_fast with verify=True re-counts and logs on count change."""
+    count_resp1 = Mock(text=json.dumps({"response": 25}), status_code=200)
+    page1 = [{"id": i} for i in range(1, 26)]
+    page1_resp = Mock(text=json.dumps({"response": page1}), status_code=200)
+    count_resp2 = Mock(text=json.dumps({"response": 30}), status_code=200)
+
+    with patch.object(
+        async_api.client,
+        "get",
+        new_callable=AsyncMock,
+        side_effect=[count_resp1, page1_resp, count_resp2],
+    ):
+        result = await async_api.get_all_fast(
+            "transactions", "getList", page_size=25, verify=True
+        )
+    assert len(result) == 25
+
+
+async def test_async_get_all_fast_verify_no_warning_on_match(async_api):
+    """get_all_fast with verify=True does not warn when counts match."""
+    count_resp = Mock(text=json.dumps({"response": 25}), status_code=200)
+    page1 = [{"id": i} for i in range(1, 26)]
+    page1_resp = Mock(text=json.dumps({"response": page1}), status_code=200)
+
+    with patch.object(
+        async_api.client,
+        "get",
+        new_callable=AsyncMock,
+        side_effect=[count_resp, page1_resp, count_resp],
+    ):
+        result = await async_api.get_all_fast(
+            "transactions", "getList", page_size=25, verify=True
+        )
+    assert len(result) == 25
+
+
+# --- Concurrency control ---
+
+
+def test_async_default_max_concurrency():
+    """Default max_concurrency is 10."""
+    api = AsyncBlestaRequest("https://example.com/api", "u", "k")
+    assert api._semaphore._value == 10
+
+
+def test_async_custom_max_concurrency():
+    """Custom max_concurrency is respected."""
+    api = AsyncBlestaRequest("https://example.com/api", "u", "k", max_concurrency=5)
+    assert api._semaphore._value == 5
+
+
+# --- ContextVar last_request ---
+
+
+async def test_async_last_request_contextvar(async_api):
+    """submit() sets ContextVar for task-safe last_request."""
+    from blesta_sdk._async_client import _last_request_var
+
+    mock_response = Mock(text='{"response": {}}', status_code=200)
+    with patch.object(
+        async_api.client, "get", new_callable=AsyncMock, return_value=mock_response
+    ):
+        await async_api.get("clients", "getList", {"page": 1})
+    ctx_val = _last_request_var.get(None)
+    assert ctx_val is not None
+    assert ctx_val["url"] == "https://example.com/api/clients/getList.json"
+
+
+# --- Discovery caching (async) ---
+
+
+def test_async_discovery_cached():
+    """_get_discovery() returns the same module-level singleton."""
+    from blesta_sdk._discovery import _get_discovery
+
+    _get_discovery.cache_clear()
+    api = AsyncBlestaRequest("https://example.com/api", "u", "k")
+    d1 = api._get_discovery()
+    d2 = api._get_discovery()
+    assert d1 is d2
+    _get_discovery.cache_clear()
+
+
+# --- CSV mutation fix (async) ---
+
+
+async def test_async_report_series_no_csv_mutation(async_api):
+    """get_report_series does not mutate cached CSV row dicts."""
+    csv_text = "Package,Revenue\nPkg1,100"
+    mock_resp = Mock(text=csv_text, status_code=200)
+    with patch.object(
+        async_api.client, "get", new_callable=AsyncMock, return_value=mock_resp
+    ):
+        rows = await async_api.get_report_series("pkg_rev", "2025-01", "2025-02")
+    assert rows[0]["_period"] == "2025-01"
+    assert rows[1]["_period"] == "2025-02"
+
+    # Verify fresh csv_data is not mutated
+    from blesta_sdk._response import BlestaResponse as BR
+
+    original = BR(csv_text, 200)
+    assert "_period" not in original.csv_data[0]
+
+
+# --- URL validation (security) ---
+
+
+@pytest.mark.parametrize(
+    "model,method",
+    [
+        ("http://evil.com/x", "getList"),
+        ("//evil.com/x", "getList"),
+        ("/admin", "getList"),
+        ("../internal", "getList"),
+        ("clients", "../../etc/passwd"),
+        ("clients", "/deleteAll"),
+        ("clients", "http://evil.com"),
+        ("..\\internal", "getList"),
+        ("clients", "..\\secret"),
+        ("", "getList"),
+        ("clients", ""),
+    ],
+)
+async def test_async_url_validation_rejects_unsafe_segments(async_api, model, method):
+    with pytest.raises(ValueError):
+        await async_api.submit(model, method)
+
+
+def test_async_url_validation_allows_valid_segments():
+    api = AsyncBlestaRequest("https://example.com/api", "u", "k")
+    api._validate_segment("clients", "model")
+    api._validate_segment("plugin.model", "model")
+    api._validate_segment("getList", "method")
+    api._validate_segment("getListCount", "method")
+    api._validate_segment("report_manager", "model")
+
+
+async def test_async_url_construction_uses_concatenation(async_api):
+    """Constructed URL uses string concat, not urljoin."""
+    mock_response = Mock(text='{"response": {}}', status_code=200)
+    with patch.object(
+        async_api.client, "get", new_callable=AsyncMock, return_value=mock_response
+    ) as mock_get:
+        await async_api.get("clients", "getList")
+    called_url = mock_get.call_args[0][0]
+    assert called_url == "https://example.com/api/clients/getList.json"
+
+
+async def test_async_url_construction_plugin_model(async_api):
+    """Plugin dot notation produces correct URL."""
+    mock_response = Mock(text='{"response": {}}', status_code=200)
+    with patch.object(
+        async_api.client, "get", new_callable=AsyncMock, return_value=mock_response
+    ) as mock_get:
+        await async_api.get("support_manager.tickets", "getList")
+    called_url = mock_get.call_args[0][0]
+    assert called_url == (
+        "https://example.com/api/support_manager.tickets/getList.json"
+    )

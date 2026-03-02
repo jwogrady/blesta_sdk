@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-03-01
+
+### Added
+- `PaginationError` exception with `page`, `status_code`, and `partial_items` attributes. Raised by `iter_all()` when `on_error="raise"` and a non-200 response is received during pagination. Exported from `blesta_sdk` package.
+- `on_error` parameter on `iter_all()` and `iter_pages()` (sync and async). `"raise"` raises `PaginationError` with partial results; `"warn"` (default) logs and stops — backward-compatible.
+- `max_pages` parameter on `iter_all()`, `get_all()`, and `iter_pages()` (sync and async) to cap the number of pages fetched.
+- `iter_pages()` method on both clients — yields each page as a separate list for batch-flushing workflows.
+- `retry_mutations` parameter on both clients. When `False` (default), only GET and DELETE are retried. Prevents accidental double-creates.
+- `max_concurrency` parameter on `AsyncBlestaRequest` — shared `asyncio.Semaphore` (default 10) limiting concurrent requests across `get_all_fast()`, `extract()`, and `get_report_series_concurrent()`.
+- `verify` parameter on `get_all_fast()` — re-counts after fetching and logs a warning on TOCTOU mismatch.
+- `free_raw()` method on `BlestaResponse` — releases raw text to save memory while preserving parsed data.
+- Repeat page detection in `iter_all()` and `iter_pages()` — aborts after 3 consecutive identical pages to prevent infinite loops.
+
+### Changed
+- Retry backoff now includes jitter (`base_delay * (0.5 + random() * 0.5)`) to prevent thundering herd.
+- `get_report_series()` / `get_report_series_concurrent()` no longer mutate cached `csv_data` row dicts when adding `_period` keys.
+- `get_report_series_concurrent()` and `get_all_fast()` use the client-level semaphore by default.
+- `call()` and `count_for()` use a cached `BlestaDiscovery` instance per client.
+- Async `submit()` stores `_last_request` in a `ContextVar` for per-task isolation.
+- Extracted shared `validate_segment()` helper into `_validation.py` to eliminate duplicated URL validation logic between sync and async clients.
+
+### Fixed
+- POST and PUT requests are no longer retried by default — only idempotent methods (GET, DELETE) are retried.
+- `get_report_series()` no longer mutates `BlestaResponse.csv_data` cache when appending `_period` keys.
+- Async `get_last_request()` reads from `ContextVar` first, preventing race conditions in concurrent tasks.
+- `BlestaDiscovery` is no longer re-instantiated on every `call()` / `count_for()` invocation.
+- `iter_pages()` now has safety parity with `iter_all()` (repeat-page detection, `on_error` support).
+
 ## [0.4.0] - 2026-03-01
 
 ### Added
@@ -14,7 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `MethodSpec` frozen dataclass returned by `get_method_spec()` with model, method, http_method, category, description, params, return_type, source, and signature fields.
 - `generate_capabilities_report(format="markdown"|"json")` for full API surface reports.
 - `generate_ai_index(path)` writes JSONL index suitable for embedding pipelines.
-- `call(model, method, args=None, action=None)` on both `BlestaRequest` and `AsyncBlestaRequest` — schema-aware request that infers the HTTP method from the bundled schema. Falls back to POST if schema is unavailable.
+- `call(model, method, args=None, action=None)` on both `BlestaRequest` and `AsyncBlestaRequest` — schema-aware request that infers the HTTP method from the bundled schema. When the schema cannot resolve the method, falls back to a prefix-based heuristic (`get*` -> GET, `create*` -> POST, `edit*` -> PUT, `delete*` -> DELETE). Logs a warning and defaults to POST only when the method name is truly ambiguous.
 - `call_all(model, method, args=None, start_page=1)` — schema-aware pagination convenience wrapper.
 - `count_for(model, list_method="getList", args=None)` — auto-discovers the count method via schema pagination pairs. Falls back to `list_method + "Count"`.
 - `BlestaDiscovery` and `MethodSpec` exported from `blesta_sdk` package `__init__.py`.
@@ -22,17 +50,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Schema extractor I/O layer tests (mocked `build_schema()`, `main()` CLI for both core and plugin extractors).
 
 ### Changed
+- **Schemas now bundled inside the package** (`src/blesta_sdk/schemas/`) and loaded via `importlib.resources`. `BlestaDiscovery` works out of the box in pip-installed wheels — no source checkout required.
+- `_discovery.py` loads bundled schemas via `importlib.resources` instead of filesystem traversal. Custom schema paths via `core_schema_path`/`plugin_schema_path` constructor args still work.
 - `Development Status` classifier upgraded from `3 - Alpha` to `4 - Beta`.
 - CI workflow now lints `tools/` directory alongside `src/` and `tests/`.
 - `__getattr__` in `__init__.py` now has explicit `-> object` return type annotation.
 - README rewritten with complete v0.4.0 API reference including discovery, schema-aware helpers, authentication section, and async-specific method documentation.
 - README API reference table now includes `submit()`, `call()`, `call_all()`, `count_for()`, and `auth_method` constructor parameter.
 - README `AsyncBlestaRequest` section now documents `get_all_fast()` and `get_report_series_concurrent()`.
+- Publish workflow simplified to token-based auth only (removed unused OIDC `id-token` permission).
 
 ### Fixed
+- `call()` no longer silently defaults all requests to POST when schemas are unavailable. Now uses method-name heuristics for correct HTTP verb inference.
 - `is_csv` property now short-circuits on empty/whitespace responses before attempting JSON parse, avoiding unnecessary work.
 - `iter_all()` (sync and async) avoids redundant variable assignment when args is `None`.
 - Schema tooling test coverage increased from 73% to 98%.
+- README pool defaults description corrected (removed inaccurate "up from requests' default of 1/1" claim).
+- `__version__` now documented in README API reference.
 
 ## [0.3.0] - 2026-03-01
 
@@ -47,7 +81,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `[async]` optional dependency group for httpx.
 - `auth_method` parameter on both `BlestaRequest` and `AsyncBlestaRequest`. Set `auth_method="header"` to use header-based authentication (`BLESTA-API-USER` / `BLESTA-API-KEY` headers) instead of HTTP Basic Auth. Defaults to `"basic"` for backward compatibility.
 - `count()` convenience method on `BlestaRequest` for `getListCount`-style API calls. Returns a plain `int` with `0` fallback on errors.
-- Connection pool tuning via `pool_connections` and `pool_maxsize` parameters on `BlestaRequest`. Defaults to 10/10 (up from requests' default 1/1).
+- Connection pool tuning via `pool_connections` and `pool_maxsize` parameters on `BlestaRequest`. Defaults to 10/10.
 - `__repr__` on `BlestaRequest` and `BlestaResponse` for readable REPL/notebook output.
 - `max_retries` parameter on `BlestaRequest` — automatic retry with exponential backoff for network errors and 5xx responses.
 - `extract()` method on `BlestaRequest` for batch extraction of multiple paginated endpoints in one call.
