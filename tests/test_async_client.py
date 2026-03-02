@@ -713,3 +713,77 @@ async def test_async_get_report_series_pages(async_api):
     assert result[1][0] == "2025-02"
     assert result[2][0] == "2025-03"
     assert all(isinstance(r[1], BlestaResponse) for r in result)
+
+
+# --- call() helpers ---
+
+
+async def test_async_call_infers_http_method(async_api):
+    """call() with no action infers from discovery schema."""
+    mock_response = Mock(text='{"response": []}', status_code=200)
+    with (
+        patch.object(
+            async_api.client,
+            "get",
+            new_callable=AsyncMock,
+            return_value=mock_response,
+        ),
+        patch(
+            "blesta_sdk._discovery.BlestaDiscovery.resolve_http_method",
+            return_value="GET",
+        ),
+    ):
+        response = await async_api.call("clients", "getList")
+    assert response.status_code == 200
+
+
+async def test_async_call_explicit_action(async_api):
+    """call() with explicit action skips discovery."""
+    mock_response = Mock(text='{"response": 1}', status_code=200)
+    with patch.object(
+        async_api.client, "post", new_callable=AsyncMock, return_value=mock_response
+    ):
+        response = await async_api.call("clients", "create", action="POST")
+    assert response.status_code == 200
+
+
+async def test_async_call_all(async_api):
+    """call_all() delegates to get_all()."""
+    with patch.object(
+        async_api, "get_all", new_callable=AsyncMock, return_value=[{"id": 1}]
+    ) as mock:
+        result = await async_api.call_all("clients", "getList")
+    assert result == [{"id": 1}]
+    mock.assert_called_once_with("clients", "getList", None, 1)
+
+
+async def test_async_count_for(async_api):
+    """count_for() resolves the count method via discovery."""
+    with (
+        patch(
+            "blesta_sdk._discovery.BlestaDiscovery.suggest_pagination_pair",
+            return_value="getListCount",
+        ),
+        patch.object(
+            async_api, "count", new_callable=AsyncMock, return_value=42
+        ) as mock_count,
+    ):
+        result = await async_api.count_for("clients")
+    assert result == 42
+    mock_count.assert_called_once_with("clients", "getListCount", None)
+
+
+async def test_async_count_for_fallback(async_api):
+    """count_for() falls back to method + 'Count' if discovery returns None."""
+    with (
+        patch(
+            "blesta_sdk._discovery.BlestaDiscovery.suggest_pagination_pair",
+            return_value=None,
+        ),
+        patch.object(
+            async_api, "count", new_callable=AsyncMock, return_value=5
+        ) as mock_count,
+    ):
+        result = await async_api.count_for("clients", "getAll")
+    assert result == 5
+    mock_count.assert_called_once_with("clients", "getAllCount", None)

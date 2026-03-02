@@ -3,6 +3,7 @@
 Two groups:
 1. Parser unit tests — mocked PHP fixtures, no network.
 2. Schema validation tests — validate the committed JSON file.
+3. I/O layer tests — mocked orchestration and CLI.
 """
 
 from __future__ import annotations
@@ -10,10 +11,16 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 import pytest
 
-from tools.extract_plugin_schema import parse_php_file
+from tools.extract_plugin_schema import (
+    _detect_pagination,
+    build_plugin_schema,
+    fetch_with_delay,
+    parse_php_file,
+)
 
 PLUGIN_SCHEMA_PATH = (
     Path(__file__).resolve().parent.parent / "schemas" / "blesta_plugin_schema.json"
@@ -669,3 +676,188 @@ class TestPluginSchemaFile:
                     if "fields" in param:
                         msg = f"{model_name}.{method_name}.{param['name']}"
                         assert len(param["fields"]) > 0, f"{msg} has empty fields"
+
+
+# ---------------------------------------------------------------------------
+# I/O layer tests
+# ---------------------------------------------------------------------------
+
+PLUGIN_PHP_SOURCE = """\
+<?php
+class CmsPages extends AppModel
+{
+    /**
+     * Get all CMS pages
+     *
+     * @return array A list of pages
+     */
+    public function getList() : array
+    {
+        return [];
+    }
+
+    /**
+     * Get total page count
+     *
+     * @return int The count
+     */
+    public function getListCount() : int
+    {
+        return 0;
+    }
+}
+"""
+
+
+class TestPluginFetchWithDelay:
+    def test_fetch_with_delay(self):
+        mock_session = Mock()
+        resp = Mock(text="<?php // code")
+        resp.raise_for_status = Mock()
+        mock_session.get.return_value = resp
+        with patch("tools.extract_plugin_schema.time.sleep"):
+            result = fetch_with_delay("http://x.com", mock_session, delay=0)
+        assert result == "<?php // code"
+
+    def test_fetch_with_delay_raises(self):
+        mock_session = Mock()
+        mock_session.get.side_effect = RuntimeError("network error")
+        with pytest.raises(RuntimeError, match="network error"):
+            fetch_with_delay("http://x.com", mock_session)
+
+
+class TestPluginDetectPagination:
+    def test_pagination_pair_found(self):
+        methods = {"getList": {}, "getListCount": {}, "add": {}}
+        assert _detect_pagination(methods) == {"getList": "getListCount"}
+
+    def test_no_pagination(self):
+        assert _detect_pagination({"add": {}, "edit": {}}) == {}
+
+
+class TestBuildPluginSchema:
+    def test_build_plugin_schema_success(self):
+        def fetch_fn(url):
+            return PLUGIN_PHP_SOURCE
+
+        schema = build_plugin_schema(fetch_fn)
+        assert "metadata" in schema
+        assert "models" in schema
+        assert schema["metadata"]["schema_version"] == "2.0.0"
+        assert schema["metadata"]["model_count"] > 0
+        assert schema["metadata"]["total_methods"] > 0
+
+    def test_build_plugin_schema_fetch_failure(self):
+        def fetch_fn(url):
+            raise RuntimeError("fail")
+
+        schema = build_plugin_schema(fetch_fn)
+        assert schema["metadata"]["model_count"] == 0
+        assert schema["models"] == {}
+
+    def test_build_plugin_schema_empty_methods(self):
+        def fetch_fn(url):
+            return "<?php\nclass Foo {}\n"
+
+        schema = build_plugin_schema(fetch_fn)
+        assert schema["metadata"]["model_count"] == 0
+
+    def test_build_plugin_schema_pagination_detected(self):
+        def fetch_fn(url):
+            return PLUGIN_PHP_SOURCE
+
+        schema = build_plugin_schema(fetch_fn)
+        for model_data in schema["models"].values():
+            methods = model_data.get("methods", {})
+            if "getList" in methods and "getListCount" in methods:
+                assert "pagination" in model_data
+                assert model_data["pagination"]["getList"] == "getListCount"
+
+
+class TestPluginMainCLI:
+    def test_main_dry_run(self, capsys):
+        from tools.extract_plugin_schema import main
+
+        mock_session = Mock()
+        resp = Mock(text=PLUGIN_PHP_SOURCE)
+        resp.raise_for_status = Mock()
+        mock_session.get.return_value = resp
+        mock_session.headers = {}
+
+        with (
+            patch("sys.argv", ["extract_plugin_schema", "--dry-run"]),
+            patch("tools.extract_plugin_schema.time.sleep"),
+            patch("requests.Session", return_value=mock_session),
+        ):
+            main()
+
+        captured = capsys.readouterr()
+        output = json.loads(captured.out)
+        assert "metadata" in output
+        assert "model_keys" in output
+
+    def test_main_write_file(self, tmp_path):
+        from tools.extract_plugin_schema import main
+
+        output_file = tmp_path / "plugin.json"
+
+        mock_session = Mock()
+        resp = Mock(text=PLUGIN_PHP_SOURCE)
+        resp.raise_for_status = Mock()
+        mock_session.get.return_value = resp
+        mock_session.headers = {}
+
+        with (
+            patch(
+                "sys.argv",
+                ["extract_plugin_schema", "--output", str(output_file)],
+            ),
+            patch("tools.extract_plugin_schema.time.sleep"),
+            patch("requests.Session", return_value=mock_session),
+        ):
+            main()
+
+        assert output_file.exists()
+        data = json.loads(output_file.read_text())
+        assert "metadata" in data
+        assert "models" in data
+
+
+class TestParsePhpEdgeCases:
+    def test_method_without_docblock_skipped(self):
+        source = """\
+<?php
+class Foo extends AppModel
+{
+    public function noDoc() : void {}
+}
+"""
+        result = parse_php_file(source)
+        assert result == {}
+
+    def test_method_parse_exception_logged(self):
+        source = """\
+<?php
+class Foo extends AppModel
+{
+    /**
+     * Broken method
+     */
+    public function broken()
+    {
+    }
+}
+"""
+        with patch(
+            "tools.extract_plugin_schema._build_method_entry",
+            side_effect=ValueError("parse error"),
+        ):
+            result = parse_php_file(source)
+        assert result == {}
+
+    def test_balanced_parens_no_close(self):
+        from tools.extract_plugin_schema import _extract_balanced_parens
+
+        # Handles missing close paren gracefully
+        result = _extract_balanced_parens("(abc", 0)
+        assert result == "abc"

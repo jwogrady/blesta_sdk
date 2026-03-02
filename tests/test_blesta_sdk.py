@@ -23,9 +23,11 @@ from blesta_sdk._dateutil import _month_boundaries
 def test_all_exports():
     """__all__ exposes exactly the public API surface."""
     assert set(blesta_sdk.__all__) == {
+        "AsyncBlestaRequest",
+        "BlestaDiscovery",
         "BlestaRequest",
         "BlestaResponse",
-        "AsyncBlestaRequest",
+        "MethodSpec",
         "__version__",
     }
 
@@ -1296,6 +1298,71 @@ def test_count_returns_zero_for_zero(blesta_request):
 
 
 # --- Integration test (requires valid .env credentials) ---
+
+
+# --- call() helpers ---
+
+
+def test_call_infers_get(blesta_request):
+    """call() with no action infers from discovery schema."""
+    with (
+        patch.object(blesta_request.session, "get") as mock_get,
+        patch(
+            "blesta_sdk._discovery.BlestaDiscovery.resolve_http_method",
+            return_value="GET",
+        ),
+    ):
+        mock_get.return_value = Mock(text='{"response": []}', status_code=200)
+        response = blesta_request.call("clients", "getList")
+    assert response.status_code == 200
+    mock_get.assert_called_once()
+
+
+def test_call_explicit_action(blesta_request):
+    """call() with explicit action skips discovery."""
+    with patch.object(blesta_request.session, "post") as mock_post:
+        mock_post.return_value = Mock(text='{"response": 1}', status_code=200)
+        response = blesta_request.call(
+            "clients", "create", {"name": "X"}, action="POST"
+        )
+    assert response.status_code == 200
+    mock_post.assert_called_once()
+
+
+def test_call_all_delegates_to_get_all(blesta_request):
+    """call_all() delegates to get_all()."""
+    with patch.object(blesta_request, "get_all", return_value=[{"id": 1}]) as mock:
+        result = blesta_request.call_all("clients", "getList")
+    assert result == [{"id": 1}]
+    mock.assert_called_once_with("clients", "getList", None, 1)
+
+
+def test_count_for_uses_discovery(blesta_request):
+    """count_for() resolves the count method via discovery."""
+    with (
+        patch(
+            "blesta_sdk._discovery.BlestaDiscovery.suggest_pagination_pair",
+            return_value="getListCount",
+        ),
+        patch.object(blesta_request, "count", return_value=42) as mock_count,
+    ):
+        result = blesta_request.count_for("clients")
+    assert result == 42
+    mock_count.assert_called_once_with("clients", "getListCount", None)
+
+
+def test_count_for_fallback(blesta_request):
+    """count_for() falls back to method + 'Count' if discovery returns None."""
+    with (
+        patch(
+            "blesta_sdk._discovery.BlestaDiscovery.suggest_pagination_pair",
+            return_value=None,
+        ),
+        patch.object(blesta_request, "count", return_value=10) as mock_count,
+    ):
+        result = blesta_request.count_for("clients", "getAll")
+    assert result == 10
+    mock_count.assert_called_once_with("clients", "getAllCount", None)
 
 
 @pytest.mark.integration

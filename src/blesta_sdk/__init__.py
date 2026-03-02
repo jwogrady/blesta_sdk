@@ -1,12 +1,20 @@
 """Python SDK and CLI for the Blesta billing platform REST API."""
 
 from ._client import BlestaRequest
+from ._discovery import BlestaDiscovery, MethodSpec
 from ._response import BlestaResponse
 
-__all__ = ["BlestaRequest", "BlestaResponse", "AsyncBlestaRequest", "__version__"]
+__all__ = [
+    "AsyncBlestaRequest",
+    "BlestaDiscovery",
+    "BlestaRequest",
+    "BlestaResponse",
+    "MethodSpec",
+    "__version__",
+]
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> object:
     if name == "AsyncBlestaRequest":
         try:
             from ._async_client import AsyncBlestaRequest
