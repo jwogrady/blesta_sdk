@@ -1006,7 +1006,7 @@ async def test_async_iter_pages_single_object(async_api):
 
 
 async def test_async_iter_pages_on_error_raise(async_api):
-    """iter_pages with on_error='raise' raises PaginationError."""
+    """iter_pages with on_error='raise' raises PaginationError with partial_items."""
     from blesta_sdk import PaginationError
 
     responses = [
@@ -1025,6 +1025,7 @@ async def test_async_iter_pages_on_error_raise(async_api):
         ]
     assert exc_info.value.page == 2
     assert exc_info.value.status_code == 500
+    assert exc_info.value.partial_items == [{"id": 1}]
 
 
 async def test_async_iter_pages_repeat_detection(async_api):
@@ -1039,6 +1040,90 @@ async def test_async_iter_pages_repeat_detection(async_api):
     ):
         pages = [p async for p in async_api.iter_pages("clients", "getList")]
     assert pages == [[{"id": 1}], [{"id": 1}], [{"id": 1}]]
+
+
+async def test_async_iter_pages_on_error_raise_page1(async_api):
+    """iter_pages on_error='raise' on page 1 returns empty partial_items."""
+    from blesta_sdk import PaginationError
+
+    responses = [Mock(text="error", status_code=500)]
+    with (
+        patch.object(
+            async_api.client, "get", new_callable=AsyncMock, side_effect=responses
+        ),
+        pytest.raises(PaginationError) as exc_info,
+    ):
+        _ = [
+            p
+            async for p in async_api.iter_pages("clients", "getList", on_error="raise")
+        ]
+    assert exc_info.value.page == 1
+    assert exc_info.value.partial_items == []
+
+
+async def test_async_iter_all_warn_does_not_accumulate(async_api):
+    """iter_all with on_error='warn' does not accumulate a collected list."""
+    responses = [
+        Mock(text=json.dumps({"response": [{"id": i}]}), status_code=200)
+        for i in range(1, 4)
+    ] + [Mock(text=json.dumps({"response": []}), status_code=200)]
+    with patch.object(
+        async_api.client, "get", new_callable=AsyncMock, side_effect=responses
+    ):
+        items = [item async for item in async_api.iter_all("clients", "getList")]
+    assert items == [{"id": 1}, {"id": 2}, {"id": 3}]
+
+
+async def test_async_iter_all_raise_accumulates_partial_items(async_api):
+    """iter_all with on_error='raise' accumulates items for PaginationError."""
+    from blesta_sdk import PaginationError
+
+    responses = [
+        Mock(text=json.dumps({"response": [{"id": 1}, {"id": 2}]}), status_code=200),
+        Mock(text=json.dumps({"response": [{"id": 3}]}), status_code=200),
+        Mock(text="error", status_code=500),
+    ]
+    with (
+        patch.object(
+            async_api.client, "get", new_callable=AsyncMock, side_effect=responses
+        ),
+        pytest.raises(PaginationError) as exc_info,
+    ):
+        _ = [
+            item
+            async for item in async_api.iter_all("clients", "getList", on_error="raise")
+        ]
+    assert exc_info.value.partial_items == [{"id": 1}, {"id": 2}, {"id": 3}]
+
+
+async def test_async_get_last_request_contextvar_only(async_api):
+    """get_last_request returns only ContextVar value, not instance attr."""
+    from blesta_sdk._async_client import _last_request_var
+
+    # Manually set instance attr but not ContextVar
+    async_api._last_request = {"url": "stale", "args": {}}
+    _last_request_var.set(None)
+    assert async_api.get_last_request() is None
+
+
+async def test_async_get_last_request_concurrent_determinism(async_api):
+    """get_last_request returns per-task value under asyncio.gather."""
+    results = {}
+
+    async def _task(model: str, method: str, label: str):
+        mock_resp = Mock(text='{"response": {}}', status_code=200)
+        with patch.object(
+            async_api.client, "get", new_callable=AsyncMock, return_value=mock_resp
+        ):
+            await async_api.get(model, method)
+        results[label] = async_api.get_last_request()
+
+    await asyncio.gather(
+        _task("clients", "getList", "a"),
+        _task("invoices", "getAll", "b"),
+    )
+    assert results["a"]["url"].endswith("clients/getList.json")
+    assert results["b"]["url"].endswith("invoices/getAll.json")
 
 
 # --- Retry safety (async, idempotent-only) ---
@@ -1207,6 +1292,16 @@ async def test_async_report_series_no_csv_mutation(async_api):
         ("clients", "..\\secret"),
         ("", "getList"),
         ("clients", ""),
+        ("clients ", "getList"),
+        ("clients", "get List"),
+        ("clients\t", "getList"),
+        ("clients\n", "getList"),
+        ("clients\x00", "getList"),
+        ("clients", "\x00getList"),
+        ("clients?foo=1", "getList"),
+        ("clients", "getList?x=1"),
+        ("clients#frag", "getList"),
+        ("clients", "getList#frag"),
     ],
 )
 async def test_async_url_validation_rejects_unsafe_segments(async_api, model, method):
@@ -1245,3 +1340,197 @@ async def test_async_url_construction_plugin_model(async_api):
     assert called_url == (
         "https://example.com/api/support_manager.tickets/getList.json"
     )
+
+
+# --- Response headers plumbing ---
+
+
+async def test_async_response_headers_accessible(async_api):
+    """Headers from the HTTP response are stored on BlestaResponse."""
+    mock_response = Mock(
+        text='{"response": {}}',
+        status_code=200,
+        headers={"Content-Type": "application/json", "X-Custom": "value"},
+    )
+    with patch.object(
+        async_api.client, "get", new_callable=AsyncMock, return_value=mock_response
+    ):
+        response = await async_api.get("clients", "getList")
+    assert response.headers["Content-Type"] == "application/json"
+    assert response.headers["X-Custom"] == "value"
+
+
+async def test_async_response_retry_after_header_readable(async_api):
+    """Retry-After header is accessible as a string for downstream use."""
+    mock_response = Mock(
+        text='{"error": "rate limited"}',
+        status_code=429,
+        headers={"Retry-After": "120"},
+    )
+    with patch.object(
+        async_api.client, "get", new_callable=AsyncMock, return_value=mock_response
+    ):
+        response = await async_api.get("clients", "getList")
+    assert response.headers["Retry-After"] == "120"
+    assert response.status_code == 429
+
+
+async def test_async_response_network_error_has_empty_headers(async_api):
+    """Network errors produce a response with empty headers."""
+    import httpx
+
+    with patch.object(
+        async_api.client, "get", new_callable=AsyncMock,
+        side_effect=httpx.ConnectError("connection refused"),
+    ):
+        response = await async_api.get("clients", "getList")
+    assert response.status_code == 0
+    assert response.headers == {}
+
+
+# --- 429 rate-limit retry ---
+
+
+@patch("blesta_sdk._async_client.random.random", return_value=1.0)
+@patch("blesta_sdk._async_client.asyncio.sleep", new_callable=AsyncMock)
+async def test_async_retry_on_429_with_retry_after(mock_sleep, _mock_random):
+    """429 with Retry-After header sleeps for the specified duration."""
+    api = AsyncBlestaRequest("https://example.com/api", "u", "k", max_retries=2)
+    responses = [
+        Mock(
+            text='{"error": "rate limited"}',
+            status_code=429,
+            headers={"Retry-After": "5"},
+        ),
+        Mock(text='{"response": []}', status_code=200, headers={}),
+    ]
+    with patch.object(api.client, "get", new_callable=AsyncMock, side_effect=responses):
+        response = await api.get("clients", "getList")
+    assert response.status_code == 200
+    mock_sleep.assert_called_once_with(5)
+
+
+@patch("blesta_sdk._async_client.random.random", return_value=1.0)
+@patch("blesta_sdk._async_client.asyncio.sleep", new_callable=AsyncMock)
+async def test_async_retry_on_429_without_retry_after(mock_sleep, _mock_random):
+    """429 without Retry-After falls back to exponential backoff."""
+    api = AsyncBlestaRequest("https://example.com/api", "u", "k", max_retries=2)
+    responses = [
+        Mock(text='{"error": "rate limited"}', status_code=429, headers={}),
+        Mock(text='{"response": []}', status_code=200, headers={}),
+    ]
+    with patch.object(api.client, "get", new_callable=AsyncMock, side_effect=responses):
+        response = await api.get("clients", "getList")
+    assert response.status_code == 200
+    mock_sleep.assert_called_once_with(1)  # 2^0 * (0.5 + 1.0*0.5) = 1
+
+
+async def test_async_no_retry_on_429_when_max_retries_zero(async_api):
+    """429 is not retried when max_retries is 0 (default)."""
+    mock_response = Mock(
+        text='{"error": "rate limited"}',
+        status_code=429,
+        headers={"Retry-After": "5"},
+    )
+    with patch.object(
+        async_api.client, "get", new_callable=AsyncMock, return_value=mock_response
+    ):
+        response = await async_api.get("clients", "getList")
+    assert response.status_code == 429
+
+
+@patch("blesta_sdk._async_client.random.random", return_value=1.0)
+@patch("blesta_sdk._async_client.asyncio.sleep", new_callable=AsyncMock)
+async def test_async_429_retry_after_headers_plumbed(mock_sleep, _mock_random):
+    """Retry-After header is accessible on the final 429 response."""
+    api = AsyncBlestaRequest("https://example.com/api", "u", "k", max_retries=1)
+    mock_response = Mock(
+        text='{"error": "rate limited"}',
+        status_code=429,
+        headers={"Retry-After": "60"},
+    )
+    with patch.object(
+        api.client, "get", new_callable=AsyncMock, return_value=mock_response
+    ):
+        response = await api.get("clients", "getList")
+    assert response.status_code == 429
+    assert response.headers["Retry-After"] == "60"
+
+
+# --- raise_on_error flag (async) ---
+
+
+async def test_async_raise_on_error_raises_on_4xx():
+    """raise_on_error=True causes submit() to raise on 4xx."""
+    import blesta_sdk
+
+    api = AsyncBlestaRequest(
+        "https://example.com/api", "u", "k", raise_on_error=True
+    )
+    mock_response = Mock(
+        text='{"errors": {"field": "bad"}}', status_code=400, headers={}
+    )
+    with (
+        patch.object(
+            api.client, "get", new_callable=AsyncMock, return_value=mock_response
+        ),
+        pytest.raises(blesta_sdk.BlestaAPIError) as exc_info,
+    ):
+        await api.get("clients", "getList")
+    assert exc_info.value.status_code == 400
+
+
+async def test_async_raise_on_error_raises_on_connection_error():
+    """raise_on_error=True causes submit() to raise on network errors."""
+    import httpx
+
+    import blesta_sdk
+
+    api = AsyncBlestaRequest(
+        "https://example.com/api", "u", "k", raise_on_error=True
+    )
+    with (
+        patch.object(
+            api.client, "get", new_callable=AsyncMock,
+            side_effect=httpx.ConnectError("refused"),
+        ),
+        pytest.raises(blesta_sdk.BlestaConnectionError),
+    ):
+        await api.get("clients", "getList")
+
+
+async def test_async_raise_on_error_false_returns_response():
+    """raise_on_error=False (default) returns BlestaResponse on error."""
+    api = AsyncBlestaRequest("https://example.com/api", "u", "k")
+    mock_response = Mock(
+        text='{"errors": {"field": "bad"}}', status_code=400, headers={}
+    )
+    with patch.object(
+        api.client, "get", new_callable=AsyncMock, return_value=mock_response
+    ):
+        response = await api.get("clients", "getList")
+    assert isinstance(response, BlestaResponse)
+    assert response.status_code == 400
+
+
+async def test_async_raise_on_error_429_has_retry_after():
+    """raise_on_error=True populates retry_after from httpx headers."""
+    import blesta_sdk
+
+    api = AsyncBlestaRequest(
+        "https://example.com/api", "u", "k", raise_on_error=True
+    )
+    mock_response = Mock(
+        text='{"error": "rate limited"}',
+        status_code=429,
+        headers={"Retry-After": "30"},
+    )
+    with (
+        patch.object(
+            api.client, "get", new_callable=AsyncMock, return_value=mock_response
+        ),
+        pytest.raises(blesta_sdk.BlestaRateLimitError) as exc_info,
+    ):
+        await api.get("clients", "getList")
+    assert exc_info.value.retry_after == 30
+    assert exc_info.value.headers["Retry-After"] == "30"

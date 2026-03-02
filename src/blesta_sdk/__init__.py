@@ -2,14 +2,28 @@
 
 from ._client import BlestaRequest
 from ._discovery import BlestaDiscovery, MethodSpec
-from ._exceptions import PaginationError
+from ._exceptions import (
+    BlestaAPIError,
+    BlestaAuthError,
+    BlestaConnectionError,
+    BlestaError,
+    BlestaRateLimitError,
+    BlestaServerError,
+    PaginationError,
+)
 from ._response import BlestaResponse
 
 __all__ = [
     "AsyncBlestaRequest",
+    "BlestaAPIError",
+    "BlestaAuthError",
+    "BlestaConnectionError",
     "BlestaDiscovery",
+    "BlestaError",
+    "BlestaRateLimitError",
     "BlestaRequest",
     "BlestaResponse",
+    "BlestaServerError",
     "MethodSpec",
     "PaginationError",
     "__version__",
