@@ -52,12 +52,15 @@ class AsyncBlestaRequest:
     :param timeout: Request timeout in seconds. Applied at client
         initialization and cannot be changed afterward (unlike the sync
         client, where timeout is passed per-request).
-    :param max_retries: Number of retries on network errors or 5xx responses.
-        Only GET and DELETE are retried by default. Pass
-        ``retry_mutations=True`` to also retry POST/PUT.
+    :param max_retries: Number of retries on transient failures.
+        GET and DELETE retry on network errors, 5xx responses, and 429.
+        POST and PUT retry **only on 429** (rate-limit) — never on 5xx,
+        because a server error does not guarantee the write failed and
+        retrying risks duplicate billing records.
         Uses exponential backoff with jitter. Defaults to ``0`` (no retries).
-    :param retry_mutations: Allow retrying non-idempotent methods
-        (POST, PUT). Defaults to ``False``.
+    :param retry_mutations: Include POST and PUT in the retry loop.
+        When ``True``, POST/PUT will retry on 429 but still never on 5xx.
+        Defaults to ``False``.
     :param max_connections: Maximum number of connections in the pool.
         Defaults to ``10``.
     :param max_keepalive_connections: Maximum number of idle keep-alive
@@ -112,8 +115,9 @@ class AsyncBlestaRequest:
         self.retry_mutations = retry_mutations
         self.auth_method = auth_method
         self.raise_on_error = raise_on_error
+        if max_concurrency is not None and max_concurrency < 1:
+            raise ValueError("max_concurrency must be >= 1")
         self._discovery = discovery
-        self._last_request: dict[str, Any] | None = None
         self._semaphore = asyncio.Semaphore(max_concurrency)
         auth = None if auth_method == "header" else httpx.BasicAuth(self.user, self.key)
         headers = {}
@@ -243,7 +247,6 @@ class AsyncBlestaRequest:
         self._validate_segment(method, "method")
         url = f"{self.base_url}{model}/{method}.json"
         request_info = {"url": url, "args": args.copy()}
-        self._last_request = request_info
         _last_request_var.set(request_info)
 
         can_retry = self.retry_mutations or action in _IDEMPOTENT_METHODS
@@ -601,6 +604,11 @@ class AsyncBlestaRequest:
         Each target is a tuple of ``(model, method)`` or
         ``(model, method, args)``.
 
+        The semaphore is acquired **per individual HTTP request** rather
+        than per target.  This prevents a slow multi-page target from
+        holding the semaphore across its entire pagination run and
+        starving other concurrently-extracted targets.
+
         :param targets: List of extraction targets.
         :return: Dict mapping ``"model.method"`` to list of results.
         """
@@ -608,15 +616,39 @@ class AsyncBlestaRequest:
         async def _fetch(
             target: tuple[str, str] | tuple[str, str, dict[str, Any]],
         ) -> tuple[str, list[Any]]:
-            async with self._semaphore:
-                if len(target) == 3:
-                    model, method, args = target  # type: ignore[misc]
+            if len(target) == 3:
+                model, method, args = target  # type: ignore[misc]
+            else:
+                model, method = target  # type: ignore[misc]
+                args = None
+            key = f"{model}.{method}"
+            # Paginate manually so the semaphore gates each individual
+            # HTTP request rather than the entire multi-page loop.
+            base_args = args or {}
+            state = PaginationState(1, None, "warn")
+            items: list[Any] = []
+            while state.has_next_page():
+                async with self._semaphore:
+                    response = await self.get(
+                        model, method, {**base_args, "page": state.page}
+                    )
+                # Yield to the event loop after releasing the semaphore so
+                # other targets waiting on the semaphore can make progress
+                # before this target re-acquires for its next page.
+                await asyncio.sleep(0)
+                if state.check_response(response):
+                    break
+                data = response.data
+                if state.check_data(data):
+                    break
+                state.collect(data)
+                if isinstance(data, list):
+                    items.extend(data)
                 else:
-                    model, method = target  # type: ignore[misc]
-                    args = None
-                key = f"{model}.{method}"
-                data = await self.get_all(model, method, args)
-                return key, data
+                    items.append(data)
+                    break
+                state.advance()
+            return key, items
 
         pairs = await asyncio.gather(*[_fetch(t) for t in targets])
         return dict(pairs)
@@ -845,17 +877,36 @@ class AsyncBlestaRequest:
         args: dict[str, Any] | None = None,
         start_page: int = 1,
     ) -> list[Any]:
-        """Paginate an API method, inferring the HTTP verb from the schema.
+        """Paginate an API method, validating via schema that it uses GET.
 
-        Convenience wrapper around :meth:`get_all` that uses schema
-        discovery to confirm the method should be called via GET.
+        Convenience wrapper around :meth:`get_all` that uses
+        :class:`~blesta_sdk.BlestaDiscovery` to confirm the method resolves
+        to GET before paginating. If the schema is unavailable, proceeds
+        with a debug log note. If the schema definitively says the method
+        is not GET (e.g., POST, PUT, DELETE), :exc:`ValueError` is raised.
 
         :param model: API model (e.g., ``"invoices"``).
         :param method: API method (e.g., ``"getList"``).
         :param args: Query parameters.
         :param start_page: Page number to start from.
         :return: List of all result items across all pages.
+        :raises ValueError: When the schema indicates the method is not GET.
         """
+        _sentinel = "_UNRESOLVED_"
+        disco = self._get_discovery()
+        http_method = disco.resolve_http_method(model, method, default=_sentinel)
+        if http_method == _sentinel:
+            logger.debug(
+                "call_all(%s, %s): schema unavailable, proceeding with GET.",
+                model,
+                method,
+            )
+        elif http_method != "GET":
+            raise ValueError(
+                f"call_all({model!r}, {method!r}): schema says HTTP method is"
+                f" {http_method!r}, not GET. Use get_all() directly or pass the"
+                " correct pagination method."
+            )
         return await self.get_all(model, method, args, start_page)
 
     async def count_for(
@@ -868,7 +919,8 @@ class AsyncBlestaRequest:
 
         Uses :class:`~blesta_sdk.BlestaDiscovery` to find the matching
         count method (e.g., ``"getList"`` -> ``"getListCount"``). Falls
-        back to ``list_method + "Count"`` if the schema is unavailable.
+        back to ``list_method + "Count"`` if the schema is unavailable,
+        with a warning log so callers can verify the endpoint exists.
 
         :param model: API model (e.g., ``"transactions"``).
         :param list_method: The list method to find a count for.
@@ -879,6 +931,13 @@ class AsyncBlestaRequest:
         count_method = disco.suggest_pagination_pair(model, list_method)
         if count_method is None:
             count_method = list_method + "Count"
+            logger.warning(
+                "count_for(%s, %s): no count method found in schema, "
+                "falling back to %r. Verify this endpoint exists.",
+                model,
+                list_method,
+                count_method,
+            )
         return await self.count(model, count_method, args)
 
     def get_last_request(self) -> dict[str, Any] | None:

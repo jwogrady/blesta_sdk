@@ -42,6 +42,7 @@ class BlestaResponse:
         self._headers: Mapping[str, str] = headers or {}
         self._parsed: dict[str, Any] | object = _UNSET
         self._json_valid: bool | None = None
+        self._is_csv: bool | None = None
         self._csv_cache: list[dict[str, str]] | None | object = _UNSET
 
     def __repr__(self) -> str:
@@ -84,7 +85,17 @@ class BlestaResponse:
 
     @property
     def is_csv(self) -> bool:
-        """Returns True if the raw response appears to be CSV data."""
+        """Returns True if the raw response appears to be CSV data.
+
+        The result is cached after the first call; subsequent accesses return
+        the stored value without re-parsing the raw body.
+        """
+        if self._is_csv is None:
+            self._is_csv = self._compute_is_csv()
+        return self._is_csv
+
+    def _compute_is_csv(self) -> bool:
+        """Compute whether the raw response is CSV data (called at most once)."""
         if self._status_code != 200:
             return False
         if not self._raw or not self._raw.strip():
@@ -262,6 +273,9 @@ class BlestaResponse:
         """
         # Ensure caches are populated before discarding raw text.
         self._format_response()
+        # Populate is_csv cache (reads raw body via splitlines).
+        if self._is_csv is None:
+            self._is_csv = self._compute_is_csv()
         if self._csv_cache is _UNSET:
             # Populate csv_data cache (may set to None).
             _ = self.csv_data

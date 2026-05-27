@@ -1730,6 +1730,72 @@ def test_iter_all_repeat_resets_on_different_data(blesta_request):
     assert result == [{"id": 1}, {"id": 1}, {"id": 2}]
 
 
+def test_pagination_stuck_list_raises_on_error_raise(blesta_request):
+    """Repeated list pages trigger stuck detection and raise with on_error='raise'."""
+    from blesta_sdk import PaginationError
+
+    same_data = [{"id": 1}]
+    responses = [
+        Mock(text=json.dumps({"response": same_data}), status_code=200)
+        for _ in range(5)
+    ]
+    with (
+        patch.object(blesta_request.session, "get", side_effect=responses),
+        pytest.raises(PaginationError) as exc_info,
+    ):
+        list(blesta_request.iter_all("clients", "getList", on_error="raise"))
+    err = exc_info.value
+    assert err.status_code == 0
+    # partial_items contains the 3 items yielded before detection fires
+    assert err.partial_items == [{"id": 1}, {"id": 1}, {"id": 1}]
+
+
+def test_pagination_stuck_dict_detected(blesta_request):
+    """Repeated dict response triggers stuck-page detection and stops iteration."""
+    same_dict = {"id": 42, "name": "test"}
+    responses = [
+        Mock(text=json.dumps({"response": same_dict}), status_code=200)
+        for _ in range(5)
+    ]
+    with patch.object(blesta_request.session, "get", side_effect=responses):
+        # on_error='warn' (default): silently stops
+        result = list(blesta_request.iter_all("clients", "get"))
+    # Non-list response: caller yields once and returns — no repeat detection
+    # fires because the caller never comes back for a second page.
+    assert result == [same_dict]
+
+
+def test_pagination_stuck_dict_raises_on_error_raise(blesta_request):
+    """Repeated dict pages raise PaginationError when on_error='raise'."""
+    from blesta_sdk import PaginationError
+
+    # To trigger dict repeat detection we need the pagination loop to keep
+    # calling get().  iter_all() yields a non-list and returns immediately, so
+    # we use PaginationState directly to verify the detection logic.
+    from blesta_sdk._pagination import PaginationState
+
+    state = PaginationState(start_page=1, max_pages=None, on_error="raise")
+    same_dict = {"id": 1}
+    # First call: sets _prev_data, no repeat
+    assert state.check_data(same_dict) is False
+    # Second through third call: repeat_count 1, 2 — below threshold
+    assert state.check_data(same_dict) is False
+    assert state.check_data(same_dict) is False
+    # Fourth call: repeat_count 3 >= _REPEAT_THRESHOLD → should raise
+    with pytest.raises(PaginationError) as exc_info:
+        state.check_data(same_dict)
+    assert exc_info.value.status_code == 0
+
+
+def test_pagination_falsy_scalar_yields_once(blesta_request):
+    """A falsy scalar (0, False) yields once and stops without stuck detection."""
+    for falsy_value in (0, False):
+        mock_resp = Mock(text=json.dumps({"response": falsy_value}), status_code=200)
+        with patch.object(blesta_request.session, "get", return_value=mock_resp):
+            result = list(blesta_request.iter_all("clients", "getCount"))
+        assert result == [falsy_value], f"Expected [{falsy_value!r}], got {result}"
+
+
 # --- iter_pages ---
 
 
@@ -2669,17 +2735,17 @@ def test_last_request_args_are_copied(blesta_request):
     [
         "password",
         "passwd",
-        "pass",
         "token",
         "api_key",
-        "key",
         "secret",
+        "private_key",
         "card_number",
-        "card",
         "cvv",
         "cvc",
         "account_number",
         "routing_number",
+        "ssn",
+        "pin",
     ],
 )
 def test_last_request_redacts_sensitive_keys(blesta_request, sensitive_key):
