@@ -17,6 +17,10 @@ from blesta_sdk._response import BlestaResponse
 logger = logging.getLogger(__name__)
 
 _REPEAT_THRESHOLD = 3
+# Rolling window size for alternating-page detection.
+# Keeps a short history of recent page hashes to catch A→B→A→B loops
+# that would otherwise reset _repeat_count on every page.
+_WINDOW_SIZE = 6
 
 
 class PaginationState:
@@ -44,6 +48,8 @@ class PaginationState:
         self._on_error = on_error
         self._prev_data: list[Any] | None = None
         self._repeat_count = 0
+        # Rolling window of recent page-data hashes for alternating-loop detection.
+        self._page_hash_window: list[int] = []
 
     def has_next_page(self) -> bool:
         """Return ``True`` if the loop should fetch another page."""
@@ -76,14 +82,23 @@ class PaginationState:
 
         Must be called *before* yielding items.
 
+        Valid falsy scalars (``0``, ``False``, ``""``) are treated as
+        real data and do *not* terminate pagination.  Only ``None``,
+        ``[]``, and ``{}`` are considered empty terminal responses.
+
+        Also detects alternating-page loops (A→B→A→B…) by keeping a
+        short rolling window of recent page-data hashes.  The window
+        catches patterns that reset the consecutive-repeat counter.
+
         :return: ``True`` if iteration should stop.
         """
-        if not data:
+        if data is None or data == [] or data == {}:
             return True
 
         if not isinstance(data, list):
             return False
 
+        # --- Consecutive identical-page detection ---
         if self._prev_data is not None and data == self._prev_data:
             self._repeat_count += 1
             if self._repeat_count >= _REPEAT_THRESHOLD:
@@ -97,6 +112,32 @@ class PaginationState:
         else:
             self._repeat_count = 0
         self._prev_data = data
+
+        # --- Alternating-page loop detection (rolling window) ---
+        # Hash the page content and keep the last _WINDOW_SIZE hashes.
+        # If the window is full and contains only two distinct values
+        # that alternate perfectly, the pagination is stuck in a cycle.
+        try:
+            page_hash = hash(str(data))
+        except Exception:
+            page_hash = id(data)
+        self._page_hash_window.append(page_hash)
+        if len(self._page_hash_window) > _WINDOW_SIZE:
+            self._page_hash_window.pop(0)
+        if len(self._page_hash_window) == _WINDOW_SIZE:
+            unique = set(self._page_hash_window)
+            if len(unique) == 2:
+                # Check that the window is a pure alternation (A,B,A,B,…)
+                seq = self._page_hash_window
+                if all(seq[i] != seq[i + 1] for i in range(len(seq) - 1)):
+                    logger.error(
+                        "Pagination aborted: page %d stuck in alternating loop "
+                        "(last %d pages cycle between 2 distinct responses)",
+                        self.page,
+                        _WINDOW_SIZE,
+                    )
+                    return True
+
         return False
 
     def collect(self, data: Any) -> None:
