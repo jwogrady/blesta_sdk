@@ -2685,6 +2685,29 @@ def test_last_request_non_sensitive_keys_pass_through(blesta_request):
     assert last["args"]["status"] == "active"
 
 
+def test_get_last_request_redacts_nested_args(blesta_request):
+    """Nested sensitive values are redacted; original args are not mutated."""
+    args = {
+        "name": "Alice",
+        "auth": {"password": "secret"},
+        "cards": [{"card_number": "4111111111111111", "cvv": "123"}],
+    }
+    with patch.object(blesta_request.session, "post") as mock_post:
+        mock_post.return_value = Mock(
+            text='{"response": {"id": 1}}', status_code=200, headers={}
+        )
+        blesta_request.post("clients", "create", args)
+    last = blesta_request.get_last_request()
+    assert last["args"] == {
+        "name": "Alice",
+        "auth": {"password": "***"},
+        "cards": [{"card_number": "***", "cvv": "***"}],
+    }
+    # Original not mutated.
+    assert args["auth"]["password"] == "secret"
+    assert args["cards"][0]["card_number"] == "4111111111111111"
+
+
 # ---------------------------------------------------------------------------
 # Coverage gap tests
 # ---------------------------------------------------------------------------

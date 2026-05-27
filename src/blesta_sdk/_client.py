@@ -18,6 +18,7 @@ from requests.auth import HTTPBasicAuth
 
 from blesta_sdk._dateutil import _month_boundaries
 from blesta_sdk._pagination import PaginationState
+from blesta_sdk._redaction import redact_args
 from blesta_sdk._response import BlestaResponse
 from blesta_sdk._validation import validate_segment
 
@@ -26,33 +27,6 @@ logger = logging.getLogger(__name__)
 DEFAULT_TIMEOUT = 30
 
 _IDEMPOTENT_METHODS = frozenset({"GET", "DELETE"})
-
-_SENSITIVE_KEYS = frozenset(
-    {
-        "password",
-        "passwd",
-        "pass",
-        "token",
-        "api_key",
-        "key",
-        "secret",
-        "card_number",
-        "card",
-        "cvv",
-        "cvc",
-        "account_number",
-        "routing_number",
-    }
-)
-
-
-def _redact_args(args: dict[str, Any]) -> dict[str, Any]:
-    """Return a copy of args with sensitive values replaced by '***'.
-
-    Does not modify the original dict. Safe to call on request payloads
-    for display/logging only.
-    """
-    return {k: "***" if k.lower() in _SENSITIVE_KEYS else v for k, v in args.items()}
 
 
 class BlestaRequest:
@@ -747,5 +721,5 @@ class BlestaRequest:
             return None
         return {
             "url": self._last_request["url"],
-            "args": _redact_args(self._last_request["args"]),
+            "args": redact_args(self._last_request["args"]),
         }

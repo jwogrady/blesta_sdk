@@ -17,9 +17,9 @@ from typing import Any, Literal
 
 import httpx
 
-from blesta_sdk._client import _redact_args
 from blesta_sdk._dateutil import _month_boundaries
 from blesta_sdk._pagination import PaginationState
+from blesta_sdk._redaction import redact_args
 from blesta_sdk._response import BlestaResponse
 from blesta_sdk._validation import validate_segment
 
@@ -900,5 +900,5 @@ class AsyncBlestaRequest:
             return None
         return {
             "url": info["url"],
-            "args": _redact_args(info["args"]),
+            "args": redact_args(info["args"]),
         }
