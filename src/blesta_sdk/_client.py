@@ -45,12 +45,15 @@ class BlestaRequest:
     :param user: API username.
     :param key: API key.
     :param timeout: Request timeout in seconds.
-    :param max_retries: Number of retries on network errors or 5xx responses.
-        Only GET and DELETE are retried by default. Pass
-        ``retry_mutations=True`` to also retry POST/PUT.
+    :param max_retries: Number of retries on transient failures.
+        GET and DELETE retry on network errors, 5xx responses, and 429.
+        POST and PUT retry **only on 429** (rate-limit) — never on 5xx,
+        because a server error does not guarantee the write failed and
+        retrying risks duplicate billing records.
         Uses exponential backoff with jitter. Defaults to ``0`` (no retries).
-    :param retry_mutations: Allow retrying non-idempotent methods
-        (POST, PUT). Defaults to ``False``.
+    :param retry_mutations: Include POST and PUT in the retry loop.
+        When ``True``, POST/PUT will retry on 429 but still never on 5xx.
+        Defaults to ``False``.
     :param pool_connections: Number of connection pools to cache.
         Defaults to ``10``.
     :param pool_maxsize: Maximum number of connections per pool.

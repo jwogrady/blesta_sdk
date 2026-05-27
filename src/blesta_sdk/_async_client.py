@@ -52,12 +52,15 @@ class AsyncBlestaRequest:
     :param timeout: Request timeout in seconds. Applied at client
         initialization and cannot be changed afterward (unlike the sync
         client, where timeout is passed per-request).
-    :param max_retries: Number of retries on network errors or 5xx responses.
-        Only GET and DELETE are retried by default. Pass
-        ``retry_mutations=True`` to also retry POST/PUT.
+    :param max_retries: Number of retries on transient failures.
+        GET and DELETE retry on network errors, 5xx responses, and 429.
+        POST and PUT retry **only on 429** (rate-limit) — never on 5xx,
+        because a server error does not guarantee the write failed and
+        retrying risks duplicate billing records.
         Uses exponential backoff with jitter. Defaults to ``0`` (no retries).
-    :param retry_mutations: Allow retrying non-idempotent methods
-        (POST, PUT). Defaults to ``False``.
+    :param retry_mutations: Include POST and PUT in the retry loop.
+        When ``True``, POST/PUT will retry on 429 but still never on 5xx.
+        Defaults to ``False``.
     :param max_connections: Maximum number of connections in the pool.
         Defaults to ``10``.
     :param max_keepalive_connections: Maximum number of idle keep-alive
