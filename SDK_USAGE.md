@@ -215,7 +215,7 @@ disco.resolve_http_method("Unknown", "unknown")        # "POST" (default)
 disco.suggest_pagination_pair("Clients", "getList")    # "getListCount"
 
 # Generate reports
-print(disco.generate_capabilities_report(format="markdown"))
+print(disco.generate_capabilities_report(output_format="markdown"))
 disco.generate_ai_index("blesta_api_index.jsonl")  # returns entry count
 ```
 
