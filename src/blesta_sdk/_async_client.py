@@ -256,9 +256,18 @@ class AsyncBlestaRequest:
                     response.text, response.status_code, response.headers
                 )
 
-                is_retriable = (
-                    response.status_code >= 500 or response.status_code == 429
-                )
+                # Mutations (POST/PUT) must never be retried on 5xx — a server
+                # error does not guarantee the write failed, and retrying risks
+                # duplicate billing records. Only 429 (rate-limit) is safe to
+                # retry for mutations because the request was explicitly rejected
+                # before being processed.
+                is_mutation = action in ("POST", "PUT")
+                if is_mutation:
+                    is_retriable = response.status_code == 429
+                else:
+                    is_retriable = (
+                        response.status_code >= 500 or response.status_code == 429
+                    )
                 if not is_retriable or attempt == effective_retries:
                     if self.raise_on_error:
                         last_response.raise_for_status()
