@@ -46,7 +46,8 @@ class PaginationState:
         self.collected: list[Any] | None = [] if on_error == "raise" else None
         self._max_pages = max_pages
         self._on_error = on_error
-        self._prev_data: list[Any] | None = None
+        self._prev_data: Any = None
+        self._prev_data_set: bool = False
         self._repeat_count = 0
         # Rolling window of recent page-data hashes for alternating-loop detection.
         self._page_hash_window: list[int] = []
@@ -77,6 +78,25 @@ class PaginationState:
         )
         return True
 
+    def _raise_or_stop(self, message: str) -> bool:
+        """Raise ``PaginationError`` or return ``True`` depending on *on_error*.
+
+        Used by stuck-page detection so the caller can respect the error
+        policy set at pagination startup.
+
+        :return: Always ``True`` (stop iteration) when ``on_error='warn'``.
+        :raises PaginationError: When ``on_error='raise'``.
+        """
+        if self._on_error == "raise":
+            raise PaginationError(
+                message,
+                page=self.page,
+                status_code=0,
+                partial_items=self.collected,
+            )
+        logger.error("%s", message)
+        return True
+
     def check_data(self, data: Any) -> bool:
         """Validate page data and detect stuck pagination.
 
@@ -86,34 +106,48 @@ class PaginationState:
         real data and do *not* terminate pagination.  Only ``None``,
         ``[]``, and ``{}`` are considered empty terminal responses.
 
+        Stuck-page detection applies to **all** response types (list,
+        dict, scalar).  If the same value is returned on successive
+        pages beyond the threshold the method stops iteration.  When
+        ``on_error='raise'`` a :exc:`PaginationError` is raised instead
+        of silently stopping.
+
         Also detects alternating-page loops (A→B→A→B…) by keeping a
         short rolling window of recent page-data hashes.  The window
         catches patterns that reset the consecutive-repeat counter.
 
+        Non-list responses (dict, scalar) are *not* paginated: the
+        caller yields the value once and stops.  Stuck-page detection
+        for non-list types therefore only fires if the same non-list
+        value appears on the *first* two consecutive pages (i.e. the
+        API is unexpectedly repeating non-paginated data).
+
         :return: ``True`` if iteration should stop.
+        :raises PaginationError: When ``on_error='raise'`` and a stuck
+            cycle is detected.
         """
         if data is None or data == [] or data == {}:
             return True
 
-        if not isinstance(data, list):
-            return False
-
-        # --- Consecutive identical-page detection ---
-        if self._prev_data is not None and data == self._prev_data:
+        # --- Consecutive identical-page detection (all types) ---
+        if self._prev_data_set and data == self._prev_data:
             self._repeat_count += 1
             if self._repeat_count >= _REPEAT_THRESHOLD:
-                logger.error(
-                    "Pagination aborted: page %d returned identical "
-                    "data %d times consecutively",
-                    self.page,
-                    self._repeat_count + 1,
+                return self._raise_or_stop(
+                    f"Pagination aborted: page {self.page} returned identical "
+                    f"data {self._repeat_count + 1} times consecutively"
                 )
-                return True
         else:
             self._repeat_count = 0
         self._prev_data = data
+        self._prev_data_set = True
 
-        # --- Alternating-page loop detection (rolling window) ---
+        if not isinstance(data, list):
+            # Non-list responses are terminal (caller yields once and returns).
+            # No window-based alternating detection needed for non-list types.
+            return False
+
+        # --- Alternating-page loop detection (rolling window, lists only) ---
         # Hash the page content and keep the last _WINDOW_SIZE hashes.
         # If the window is full and contains only two distinct values
         # that alternate perfectly, the pagination is stuck in a cycle.
@@ -130,13 +164,11 @@ class PaginationState:
                 # Check that the window is a pure alternation (A,B,A,B,…)
                 seq = self._page_hash_window
                 if all(seq[i] != seq[i + 1] for i in range(len(seq) - 1)):
-                    logger.error(
-                        "Pagination aborted: page %d stuck in alternating loop "
-                        "(last %d pages cycle between 2 distinct responses)",
-                        self.page,
-                        _WINDOW_SIZE,
+                    return self._raise_or_stop(
+                        f"Pagination aborted: page {self.page} stuck in alternating "
+                        f"loop (last {_WINDOW_SIZE} pages cycle between 2 distinct "
+                        "responses)"
                     )
-                    return True
 
         return False
 
