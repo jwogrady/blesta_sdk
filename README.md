@@ -268,9 +268,24 @@ For production pipelines, enable automatic retry with exponential backoff:
 ```python
 api = BlestaRequest(url, user, key, max_retries=3)
 
-# Retries on network errors, 5xx, and 429 responses (with jitter)
+# GET/DELETE: retry on network errors, 5xx, and 429 (with jitter)
 # Does NOT retry on other 4xx client errors
 response = api.get("clients", "getList")
+
+# POST/PUT: retry ONLY on 429 (rate-limit), never on 5xx
+# A 5xx does not guarantee the write failed — retrying risks duplicate billing records
+response = api.post("clients", "create", {"firstname": "John"})
+```
+
+By default, only GET and DELETE are retried (`retry_mutations=False`). Pass
+`retry_mutations=True` to include POST/PUT in the retry loop, but note that even
+then **POST/PUT will never retry on 5xx — only on 429**. To safely handle server
+errors on billing writes, use an idempotency pattern (ledger dedup or
+check-before-create) rather than relying on automatic retry.
+
+```python
+# retry_mutations=True: POST/PUT will retry on 429 but NOT on 5xx
+api = BlestaRequest(url, user, key, max_retries=3, retry_mutations=True)
 ```
 
 ### Rate Limiting
@@ -369,6 +384,45 @@ async with AsyncBlestaRequest(url, user, key) as api:
 
 Constructor accepts `max_connections` and `max_keepalive_connections` (default `10`/`10`) instead of the sync `pool_connections`/`pool_maxsize`.
 
+## Environment Configuration
+
+`BlestaEnvConfig` selects credentials for a named deployment environment (dev, stage, or live) from environment variables or constructor keyword arguments.
+
+### Environment Variables
+
+| Environment | URL | User | Key |
+|---|---|---|---|
+| `dev` | `BLESTA_DEV_URL` | `BLESTA_DEV_USER` | `BLESTA_DEV_KEY` |
+| `stage` | `BLESTA_STAGE_URL` | `BLESTA_STAGE_USER` | `BLESTA_STAGE_KEY` |
+| `live` | `BLESTA_LIVE_URL` | `BLESTA_LIVE_USER` | `BLESTA_LIVE_KEY` |
+
+`.env` file support requires the `cli` extra (`pip install blesta_sdk[cli]`).
+
+### Key Behaviors
+
+- Credentials for each environment are **fully isolated** — missing vars for `stage` will never fall back to `live`.
+- Raises `ValueError` immediately if any of the three required vars are absent.
+- `client()` returns a fully configured `BlestaRequest`. Any keyword arguments are forwarded to the constructor (e.g. `allow_http=True`, `retry_mutations=True`).
+
+### Usage
+
+```python
+from blesta_sdk import BlestaEnvConfig
+
+cfg = BlestaEnvConfig("stage")
+api = cfg.client()
+response = api.get("clients", "getList")
+```
+
+Credentials can also be passed directly as keyword arguments:
+
+```python
+cfg = BlestaEnvConfig("dev", url="https://dev.example.com/api", user="u", key="k")
+api = cfg.client(max_retries=3)
+```
+
+See `.env.example` for a template covering all three environments.
+
 ## CLI
 
 The `blesta` command reads credentials from environment variables. With the `cli` extra installed (`pip install blesta_sdk[cli]`), it also loads a `.env` file in the current directory:
@@ -407,7 +461,7 @@ Output is JSON to stdout. On errors, the error dict is printed as JSON and the p
 
 ## API Reference
 
-### `BlestaRequest(url, user, key, timeout=30, max_retries=0, retry_mutations=False, pool_connections=10, pool_maxsize=10, auth_method="basic", raise_on_error=False)`
+### `BlestaRequest(url, user, key, timeout=30, max_retries=0, retry_mutations=False, pool_connections=10, pool_maxsize=10, auth_method="basic", raise_on_error=False, allow_http=False, discovery=None)`
 
 | Method | Description |
 |---|---|
@@ -432,7 +486,7 @@ Output is JSON to stdout. On errors, the error dict is printed as JSON and the p
 
 Supports context manager (`with BlestaRequest(...) as api:`).
 
-### `AsyncBlestaRequest(url, user, key, timeout=30, max_retries=0, retry_mutations=False, max_connections=10, max_keepalive_connections=10, max_concurrency=10, auth_method="basic", raise_on_error=False)`
+### `AsyncBlestaRequest(url, user, key, timeout=30, max_retries=0, retry_mutations=False, max_connections=10, max_keepalive_connections=10, max_concurrency=10, auth_method="basic", raise_on_error=False, allow_http=False, discovery=None)`
 
 Same methods as `BlestaRequest`, all `async`. Additional async-specific methods:
 
@@ -442,6 +496,26 @@ Same methods as `BlestaRequest`, all `async`. Additional async-specific methods:
 | `get_report_series_concurrent(report_type, start_month, end_month, extra_vars=None, max_concurrency=None)` | Concurrent monthly report fetching |
 
 `extract()` runs targets concurrently via `asyncio.gather()`. `iter_all()` is an async generator (`async for`). Supports `async with` context manager.
+
+### `BlestaEnvConfig(env, *, url=None, user=None, key=None)`
+
+Resolves Blesta credentials for a named deployment environment.
+
+| Parameter | Description |
+|---|---|
+| `env` | One of `"dev"`, `"stage"`, or `"live"` |
+| `url` | API base URL — falls back to `BLESTA_{ENV}_URL` env var |
+| `user` | API user — falls back to `BLESTA_{ENV}_USER` env var |
+| `key` | API key — falls back to `BLESTA_{ENV}_KEY` env var |
+
+Raises `ValueError` if `env` is not recognized, or if any credential cannot be resolved.
+
+| Method / Property | Description |
+|---|---|
+| `client(**kwargs)` | Return a `BlestaRequest` for this environment. Extra kwargs forwarded to constructor. |
+| `env` | The environment name |
+| `url` | Resolved API base URL |
+| `user` | Resolved API user |
 
 ### `BlestaDiscovery(core_schema_path=None, plugin_schema_path=None)`
 
