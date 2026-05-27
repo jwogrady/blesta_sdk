@@ -2,6 +2,7 @@
 
 from ._client import BlestaRequest
 from ._discovery import BlestaDiscovery, MethodSpec
+from ._env_config import BlestaEnvConfig
 from ._exceptions import (
     BlestaAPIError,
     BlestaAuthError,
@@ -19,6 +20,7 @@ __all__ = [
     "BlestaAuthError",
     "BlestaConnectionError",
     "BlestaDiscovery",
+    "BlestaEnvConfig",
     "BlestaError",
     "BlestaRateLimitError",
     "BlestaRequest",

@@ -1,7 +1,7 @@
 import json
 import os
 import sys
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 import requests
@@ -28,6 +28,7 @@ def test_all_exports():
         "BlestaAuthError",
         "BlestaConnectionError",
         "BlestaDiscovery",
+        "BlestaEnvConfig",
         "BlestaError",
         "BlestaRateLimitError",
         "BlestaRequest",
@@ -441,8 +442,13 @@ def test_iter_all_stops_on_none_response(blesta_request):
     assert result == []
 
 
-def test_iter_all_stops_on_falsy_data(blesta_request):
-    """iter_all treats falsy data (0, False) as end-of-pages."""
+def test_iter_all_yields_falsy_scalar_data(blesta_request):
+    """iter_all yields falsy scalars (0, False) rather than treating them as empty.
+
+    Previously this test asserted result == [] which was the buggy behavior:
+    falsy scalars were silently dropped instead of being yielded (#10).
+    Non-list responses are yielded as a single item and stop pagination.
+    """
     responses = [
         BlestaResponse(json.dumps({"response": 0}), 200),
     ]
@@ -450,7 +456,7 @@ def test_iter_all_stops_on_falsy_data(blesta_request):
     with patch.object(blesta_request, "get", side_effect=responses):
         result = list(blesta_request.iter_all("invoices", "getList"))
 
-    assert result == []
+    assert result == [0]
 
 
 def test_iter_all_forwards_args(blesta_request):
@@ -1540,19 +1546,16 @@ def test_call_heuristic_fallback(blesta_request):
     mock_delete.assert_called_once()
 
 
-def test_call_ambiguous_method_defaults_to_post(blesta_request):
-    """call() defaults to POST with warning when method name is ambiguous."""
+def test_call_ambiguous_method_raises_value_error(blesta_request):
+    """call() raises ValueError when method prefix is ambiguous (#20)."""
     with (
-        patch.object(blesta_request.session, "post") as mock_post,
         patch(
             "blesta_sdk._discovery.BlestaDiscovery.resolve_http_method",
             return_value="_UNRESOLVED_",
         ),
+        pytest.raises(ValueError, match="could not be determined"),
     ):
-        mock_post.return_value = Mock(text='{"response": null}', status_code=200)
-        response = blesta_request.call("clients", "doSomething")
-    assert response.status_code == 200
-    mock_post.assert_called_once()
+        blesta_request.call("clients", "doSomething")
 
 
 @pytest.mark.integration
@@ -1858,8 +1861,50 @@ def test_put_not_retried_by_default(mock_sleep, _mock_random):
 
 @patch("blesta_sdk._client.random.random", return_value=1.0)
 @patch("blesta_sdk._client.time.sleep")
-def test_retry_mutations_enables_post_retry(mock_sleep, _mock_random):
-    """POST is retried when retry_mutations=True."""
+def test_retry_mutations_does_not_retry_post_on_5xx(mock_sleep, _mock_random):
+    """POST with retry_mutations=True must NOT retry on 5xx (#12).
+
+    A 5xx does not guarantee the write never reached Blesta; retrying
+    can duplicate billing records. 5xx mutations return immediately.
+    """
+    api = BlestaRequest(
+        "https://test.example.com/api",
+        "u",
+        "k",
+        max_retries=3,
+        retry_mutations=True,
+    )
+    with patch.object(api.session, "post") as mock_post:
+        mock_post.return_value = Mock(text="error", status_code=500)
+        response = api.post("clients", "create")
+    assert response.status_code == 500
+    assert mock_post.call_count == 1, "POST must not be retried on 5xx"
+    mock_sleep.assert_not_called()
+
+
+@patch("blesta_sdk._client.random.random", return_value=1.0)
+@patch("blesta_sdk._client.time.sleep")
+def test_retry_mutations_does_not_retry_put_on_5xx(mock_sleep, _mock_random):
+    """PUT with retry_mutations=True must NOT retry on 5xx (#12)."""
+    api = BlestaRequest(
+        "https://test.example.com/api",
+        "u",
+        "k",
+        max_retries=3,
+        retry_mutations=True,
+    )
+    with patch.object(api.session, "put") as mock_put:
+        mock_put.return_value = Mock(text="error", status_code=503)
+        response = api.put("clients", "edit")
+    assert response.status_code == 503
+    assert mock_put.call_count == 1, "PUT must not be retried on 5xx"
+    mock_sleep.assert_not_called()
+
+
+@patch("blesta_sdk._client.random.random", return_value=1.0)
+@patch("blesta_sdk._client.time.sleep")
+def test_retry_mutations_retries_post_on_429(mock_sleep, _mock_random):
+    """POST with retry_mutations=True DOES retry on 429 (rate-limit)."""
     api = BlestaRequest(
         "https://test.example.com/api",
         "u",
@@ -1869,13 +1914,32 @@ def test_retry_mutations_enables_post_retry(mock_sleep, _mock_random):
     )
     with patch.object(api.session, "post") as mock_post:
         mock_post.side_effect = [
-            Mock(text="error", status_code=500),
-            Mock(text='{"response": "ok"}', status_code=200),
+            Mock(text='{"error": "rate limited"}', status_code=429, headers={}),
+            Mock(text='{"response": "ok"}', status_code=200, headers={}),
         ]
         response = api.post("clients", "create")
     assert response.status_code == 200
     assert mock_post.call_count == 2
-    mock_sleep.assert_called_once()
+
+
+@patch("blesta_sdk._client.random.random", return_value=1.0)
+@patch("blesta_sdk._client.time.sleep")
+def test_get_retry_on_5xx_unchanged(mock_sleep, _mock_random):
+    """GET retry on 5xx behavior is unchanged (#12)."""
+    api = BlestaRequest(
+        "https://test.example.com/api",
+        "u",
+        "k",
+        max_retries=1,
+    )
+    with patch.object(api.session, "get") as mock_get:
+        mock_get.side_effect = [
+            Mock(text="error", status_code=500, headers={}),
+            Mock(text='{"response": []}', status_code=200, headers={}),
+        ]
+        response = api.get("clients", "getList")
+    assert response.status_code == 200
+    assert mock_get.call_count == 2
 
 
 @patch("blesta_sdk._client.random.random", return_value=0.0)
@@ -2273,5 +2337,394 @@ def test_raise_on_error_false_returns_response():
     assert response.status_code == 400
 
 
+# --- Pagination integrity: falsy scalar payloads (#10) ---
+
+
+@pytest.mark.parametrize(
+    "scalar",
+    [
+        0,
+        False,
+        "",
+    ],
+)
+def test_iter_all_falsy_scalar_not_dropped(blesta_request, scalar):
+    """Falsy scalars (0, False, '') must be yielded, not silently dropped.
+
+    Previously `if not data` returned True and the scalar was discarded
+    without being yielded.  Non-list responses are yielded and then stop
+    pagination (by design); the regression was the silent drop.
+    """
+    import json
+
+    responses = [
+        Mock(text=json.dumps({"response": scalar}), status_code=200),
+    ]
+    with patch.object(blesta_request.session, "get", side_effect=responses):
+        result = list(blesta_request.iter_all("clients", "getList"))
+    # The scalar must appear in the result — it was real data, not an empty page.
+    assert (
+        scalar in result
+    ), f"Falsy scalar {scalar!r} was silently dropped instead of being yielded"
+
+
+def test_iter_all_none_terminates(blesta_request):
+    """None data must terminate pagination (real empty signal)."""
+    responses = [
+        Mock(text=json.dumps({"response": None}), status_code=200),
+    ]
+    with patch.object(blesta_request.session, "get", side_effect=responses):
+        result = list(blesta_request.iter_all("clients", "getList"))
+    assert result == []
+
+
+def test_iter_all_empty_list_terminates(blesta_request):
+    """Empty list must terminate pagination."""
+    responses = [
+        Mock(text=json.dumps({"response": [{"id": 1}]}), status_code=200),
+        Mock(text=json.dumps({"response": []}), status_code=200),
+    ]
+    with patch.object(blesta_request.session, "get", side_effect=responses):
+        result = list(blesta_request.iter_all("clients", "getList"))
+    assert result == [{"id": 1}]
+
+
+def test_iter_all_empty_dict_terminates(blesta_request):
+    """Empty dict must terminate pagination."""
+    responses = [
+        Mock(text=json.dumps({"response": {}}), status_code=200),
+    ]
+    with patch.object(blesta_request.session, "get", side_effect=responses):
+        result = list(blesta_request.iter_all("clients", "getList"))
+    assert result == []
+
+
+# --- Pagination integrity: alternating stuck-page detection (#17) ---
+
+
+def test_iter_all_alternating_page_loop_detected(blesta_request):
+    """Alternating pages A→B→A→B… must be detected and aborted.
+
+    The rolling-window detector should catch this after _WINDOW_SIZE pages.
+    """
+    page_a = [{"id": 1}]
+    page_b = [{"id": 2}]
+    # 12 alternating responses — well past the 6-page window
+    responses = []
+    for i in range(12):
+        data = page_a if i % 2 == 0 else page_b
+        responses.append(Mock(text=json.dumps({"response": data}), status_code=200))
+
+    with patch.object(blesta_request.session, "get", side_effect=responses) as mock_get:
+        result = list(blesta_request.iter_all("clients", "getList"))
+        calls_made = mock_get.call_count
+
+    # Should abort after the window fills (6 pages) + 1 detection page = 7 at most
+    assert calls_made <= 7, f"Expected abort within 7 pages, got {calls_made}"
+    # Items from the aborted pages: at most 6 pages × 1 item each
+    assert len(result) <= 6
+
+
+# --- Lane 3: HTTP opt-in and path validation hardening (#11, #16) ---
+
+
+def test_http_base_url_raises_by_default():
+    """http:// base URL must raise ValueError without allow_http=True."""
+    with pytest.raises(ValueError, match="plaintext"):
+        BlestaRequest("http://example.com/api", "user", "key")
+
+
+def test_http_base_url_allowed_with_flag():
+    """http:// base URL is permitted when allow_http=True."""
+    api = BlestaRequest("http://example.com/api", "user", "key", allow_http=True)
+    assert api.base_url == "http://example.com/api/"
+
+
+def test_https_base_url_accepted_by_default():
+    """https:// base URL requires no special flag."""
+    api = BlestaRequest("https://example.com/api", "user", "key")
+    assert api.base_url.startswith("https://")
+
+
+@pytest.mark.parametrize(
+    "model,method",
+    [
+        ("%2Fadmin", "getList"),
+        ("clients", "%2e%2epasswd"),
+        ("%00", "getList"),
+        ("clients", "%2F%2F"),
+        ("%2f", "getList"),
+    ],
+)
+def test_url_validation_rejects_percent_encoded(blesta_request, model, method):
+    """Percent-encoded path traversal is rejected (#16)."""
+    with pytest.raises(ValueError, match="percent"):
+        blesta_request.submit(model, method)
+
+
 if __name__ == "__main__":
     pytest.main(["-v"])
+
+
+# --- #24: HTTP 200 with {"errors":{}} treated as success ---
+
+
+def test_200_empty_errors_dict_is_success():
+    """HTTP 200 with {"errors":{}} is treated as success, not an error (#24)."""
+    resp = BlestaResponse('{"errors": {}}', 200)
+    errs = resp.errors()
+    assert not errs  # empty dict is falsy — treated as success
+    # raise_for_status() must not raise for empty errors
+    resp.raise_for_status()
+
+
+def test_200_empty_errors_dict_data_is_none():
+    """HTTP 200 with {"errors":{}} has no data (#24)."""
+    resp = BlestaResponse('{"errors": {}}', 200)
+    assert resp.data is None
+
+
+# --- #25: Non-integer Retry-After header ---
+
+
+@patch("blesta_sdk._client.random.random", return_value=1.0)
+@patch("blesta_sdk._client.time.sleep")
+def test_retry_after_float_does_not_crash(mock_sleep, _mock_random):
+    """Non-integer Retry-After header (e.g. float) does not crash (#25)."""
+    api = BlestaRequest("https://test.example.com/api", "u", "k", max_retries=1)
+    with patch.object(api.session, "get") as mock_get:
+        mock_get.side_effect = [
+            Mock(
+                text='{"error": "rate limited"}',
+                status_code=429,
+                headers={"Retry-After": "1.5"},
+            ),
+            Mock(text='{"response": []}', status_code=200, headers={}),
+        ]
+        response = api.get("clients", "getList")
+    assert response.status_code == 200
+
+
+@patch("blesta_sdk._client.random.random", return_value=1.0)
+@patch("blesta_sdk._client.time.sleep")
+def test_retry_after_http_date_does_not_crash(mock_sleep, _mock_random):
+    """HTTP-date Retry-After header does not crash (#25)."""
+    api = BlestaRequest("https://test.example.com/api", "u", "k", max_retries=1)
+    with patch.object(api.session, "get") as mock_get:
+        mock_get.side_effect = [
+            Mock(
+                text='{"error": "rate limited"}',
+                status_code=429,
+                headers={"Retry-After": "Wed, 21 Oct 2099 07:28:00 GMT"},
+            ),
+            Mock(text='{"response": []}', status_code=200, headers={}),
+        ]
+        response = api.get("clients", "getList")
+    assert response.status_code == 200
+
+
+# --- #26: iter_all with on_error='raise' on page-1 failure ---
+
+
+def test_iter_all_on_error_raise_page1_failure(blesta_request):
+    """iter_all with on_error='raise' raises PaginationError on page-1 failure (#26)."""
+    from blesta_sdk import PaginationError
+
+    with patch.object(blesta_request.session, "get") as mock_get:
+        mock_get.return_value = Mock(
+            text='{"error": "forbidden"}', status_code=403, headers={}
+        )
+        with pytest.raises(PaginationError) as exc_info:
+            list(blesta_request.iter_all("clients", "getList", on_error="raise"))
+    assert exc_info.value.page == 1
+    assert exc_info.value.status_code == 403
+    assert exc_info.value.partial_items == []
+
+
+# --- #27: SSL error path ---
+
+
+def test_submit_ssl_error_returns_status_0(blesta_request):
+    """SSL errors are caught and returned as status_code=0 (#27)."""
+    with patch.object(blesta_request.session, "get") as mock_get:
+        mock_get.side_effect = requests.exceptions.SSLError("SSL handshake failed")
+        response = blesta_request.get("clients", "getList")
+    assert response.status_code == 0
+    assert "SSL" in response.raw
+
+
+# --- #29: to_dataframe() after free_raw() ---
+
+
+def test_to_dataframe_after_free_raw():
+    """to_dataframe() still works after free_raw() (#29)."""
+    pytest.importorskip("pandas")
+    resp = BlestaResponse('{"response": [{"id": 1, "name": "Alice"}]}', 200)
+    resp.free_raw()
+    assert resp.raw == ""
+    df = resp.to_dataframe()
+    assert len(df) == 1
+    assert "id" in df.columns
+
+
+# --- #30: retry_mutations=True with successful first POST must NOT retry ---
+
+
+@patch("blesta_sdk._client.random.random", return_value=1.0)
+@patch("blesta_sdk._client.time.sleep")
+def test_retry_mutations_no_retry_on_success(mock_sleep, _mock_random):
+    """POST with retry_mutations=True succeeds on attempt 1, does not retry (#30)."""
+    api = BlestaRequest(
+        "https://test.example.com/api", "u", "k", max_retries=3, retry_mutations=True
+    )
+    with patch.object(api.session, "post") as mock_post:
+        mock_post.return_value = Mock(
+            text='{"response": {"id": 1}}', status_code=200, headers={}
+        )
+        response = api.post("clients", "create", {"name": "Test"})
+    assert response.status_code == 200
+    assert mock_post.call_count == 1, "Successful POST must not be retried"
+    mock_sleep.assert_not_called()
+
+
+# --- Lane 8: API semantics cleanup (#18, #20, #21) ---
+
+
+def test_call_raises_for_unknown_method(blesta_request):
+    """call() raises ValueError when method is unrecognized (#20)."""
+    mock_disco = MagicMock()
+    mock_disco.resolve_http_method.return_value = "_UNRESOLVED_"
+    with (
+        patch.object(blesta_request, "_get_discovery", return_value=mock_disco),
+        pytest.raises(ValueError, match="could not be determined"),
+    ):
+        blesta_request.call("clients", "xyzUnknownOp")
+
+
+def test_call_all_raises_for_non_get_method(blesta_request):
+    """call_all() raises ValueError when schema says method is POST (#18)."""
+    mock_disco = MagicMock()
+    mock_disco.resolve_http_method.return_value = "POST"
+    with (
+        patch.object(blesta_request, "_get_discovery", return_value=mock_disco),
+        pytest.raises(ValueError, match="not GET"),
+    ):
+        blesta_request.call_all("clients", "create")
+
+
+def test_count_for_fallback_warns(blesta_request, caplog):
+    """count_for() logs warning when falling back to list_method+Count (#21)."""
+    import logging
+
+    mock_disco = MagicMock()
+    mock_disco.suggest_pagination_pair.return_value = None
+    with (
+        patch.object(blesta_request, "_get_discovery", return_value=mock_disco),
+        patch.object(blesta_request, "count", return_value=5) as mock_count,
+        caplog.at_level(logging.WARNING),
+    ):
+        result = blesta_request.count_for("clients", "getList")
+    assert result == 5
+    mock_count.assert_called_once_with("clients", "getListCount", None)
+    assert any("falling back" in r.message for r in caplog.records)
+
+
+# --- Lane 7: last_request copy semantics and redaction (#19) ---
+
+
+def test_last_request_args_are_copied(blesta_request):
+    """Mutating args after submit does not change last_request."""
+    args = {"client_id": 1}
+    with patch.object(blesta_request.session, "get") as mock:
+        mock.return_value = Mock(text='{"response": {}}', status_code=200, headers={})
+        blesta_request.get("clients", "getList", args)
+    args["client_id"] = 999  # mutate original
+    last = blesta_request.get_last_request()
+    assert (
+        last["args"]["client_id"] == 1
+    ), "last_request must not reflect post-call mutation"
+
+
+@pytest.mark.parametrize(
+    "sensitive_key",
+    [
+        "password",
+        "passwd",
+        "pass",
+        "token",
+        "api_key",
+        "key",
+        "secret",
+        "card_number",
+        "card",
+        "cvv",
+        "cvc",
+        "account_number",
+        "routing_number",
+    ],
+)
+def test_last_request_redacts_sensitive_keys(blesta_request, sensitive_key):
+    """Sensitive args are redacted in get_last_request() output (#19)."""
+    args = {sensitive_key: "super-secret-value", "page": 1}
+    with patch.object(blesta_request.session, "post") as mock:
+        mock.return_value = Mock(text='{"response": {}}', status_code=200, headers={})
+        blesta_request.post("clients", "create", args)
+    last = blesta_request.get_last_request()
+    assert last["args"][sensitive_key] == "***"
+    assert last["args"]["page"] == 1
+
+
+def test_last_request_non_sensitive_keys_pass_through(blesta_request):
+    """Non-sensitive args are not redacted."""
+    args = {"client_id": 42, "status": "active"}
+    with patch.object(blesta_request.session, "get") as mock:
+        mock.return_value = Mock(text='{"response": {}}', status_code=200, headers={})
+        blesta_request.get("clients", "getList", args)
+    last = blesta_request.get_last_request()
+    assert last["args"]["client_id"] == 42
+    assert last["args"]["status"] == "active"
+
+
+# ---------------------------------------------------------------------------
+# Coverage gap tests
+# ---------------------------------------------------------------------------
+
+
+def test_validate_segment_rejects_backslash():
+    """Line 35 in _validation.py: backslash check."""
+    api = BlestaRequest("https://example.com/api", "u", "k")
+    with pytest.raises(ValueError, match="backslash"):
+        api._validate_segment("clients\\admin", "model")
+
+
+def test_get_discovery_returns_injected_instance():
+    """Line 168 in _client.py: _get_discovery() returns self._discovery when set."""
+    mock_disc = MagicMock()
+    api = BlestaRequest("https://example.com/api", "u", "k", discovery=mock_disc)
+    assert api._get_discovery() is mock_disc
+
+
+def test_to_dataframe_empty_csv_returns_empty_dataframe():
+    """Line 140 in _response.py: to_dataframe() on a CSV response with empty rows."""
+    # has comma + 2 lines so is_csv=True, but force cache to empty list
+    resp = BlestaResponse("col1,col2\nval1,val2\n", 200)
+    resp._csv_cache = []  # override so csv_data returns []
+    df = resp.to_dataframe()
+    assert len(df) == 0
+
+
+def test_pagination_state_collect_page_non_list():
+    """Line 150 in _pagination.py: collect_page() appends dict data to collected."""
+    from blesta_sdk._pagination import PaginationState
+
+    state = PaginationState(start_page=1, max_pages=None, on_error="raise")
+    state.collect({"id": 1, "name": "Foo"})
+    assert state.collected == [{"id": 1, "name": "Foo"}]
+
+
+def test_errors_csv_non_200_status():
+    """Line 240 in _response.py: errors() on a CSV response with non-200 status."""
+    resp = BlestaResponse("col1,col2\nval1,val2\n", 500)
+    errs = resp.errors()
+    assert errs is not None
+    assert "500" in str(errs)

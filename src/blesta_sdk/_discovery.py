@@ -187,9 +187,15 @@ class BlestaDiscovery:
         :param data: Parsed schema dict with a ``"models"`` key.
         :param source: Source label (``"core"`` or ``"plugin"``).
         """
-        assert self._registry is not None
-        assert self._source_map is not None
-        assert self._pagination_map is not None
+        if (
+            self._registry is None
+            or self._source_map is None
+            or self._pagination_map is None
+        ):
+            raise RuntimeError(
+                "BlestaDiscovery: internal state not initialised — "
+                "_ingest_schema called before _registry was set up"
+            )
 
         models = data.get("models", {})
         if not isinstance(models, dict):
@@ -225,8 +231,10 @@ class BlestaDiscovery:
         :return: Sorted list of model names.
         """
         self._ensure_loaded()
-        assert self._registry is not None
-        assert self._source_map is not None
+        if self._registry is None or self._source_map is None:
+            raise RuntimeError(
+                "BlestaDiscovery: schema data unavailable after load attempt"
+            )
 
         if source is None:
             return sorted(self._registry.keys())
@@ -240,7 +248,10 @@ class BlestaDiscovery:
         :raises KeyError: If the model is not found.
         """
         self._ensure_loaded()
-        assert self._registry is not None
+        if self._registry is None:
+            raise RuntimeError(
+                "BlestaDiscovery: schema data unavailable after load attempt"
+            )
 
         model_data = self._registry.get(model)
         if model_data is None:
@@ -256,8 +267,10 @@ class BlestaDiscovery:
         :raises KeyError: If the model or method is not found.
         """
         self._ensure_loaded()
-        assert self._registry is not None
-        assert self._source_map is not None
+        if self._registry is None or self._source_map is None:
+            raise RuntimeError(
+                "BlestaDiscovery: schema data unavailable after load attempt"
+            )
 
         model_data = self._registry.get(model)
         if model_data is None:
@@ -295,7 +308,10 @@ class BlestaDiscovery:
         :return: HTTP method string (``"GET"``, ``"POST"``, etc.).
         """
         self._ensure_loaded()
-        assert self._registry is not None
+        if self._registry is None:
+            raise RuntimeError(
+                "BlestaDiscovery: schema data unavailable after load attempt"
+            )
 
         model_data = self._registry.get(model)
         if model_data is None:
@@ -317,7 +333,10 @@ class BlestaDiscovery:
         :return: The count method name, or ``None`` if no pair found.
         """
         self._ensure_loaded()
-        assert self._pagination_map is not None
+        if self._pagination_map is None:
+            raise RuntimeError(
+                "BlestaDiscovery: schema data unavailable after load attempt"
+            )
 
         pagination = self._pagination_map.get(model)
         if pagination is None:
@@ -326,16 +345,18 @@ class BlestaDiscovery:
 
     def generate_capabilities_report(
         self,
-        format: Literal["markdown", "json"] = "markdown",
+        output_format: Literal["markdown", "json"] = "markdown",
     ) -> str:
         """Generate a capabilities report of the full API surface.
 
-        :param format: Output format — ``"markdown"`` or ``"json"``.
+        :param output_format: Output format — ``"markdown"`` or ``"json"``.
         :return: Report string.
         """
         self._ensure_loaded()
-        assert self._registry is not None
-        assert self._source_map is not None
+        if self._registry is None or self._source_map is None:
+            raise RuntimeError(
+                "BlestaDiscovery: schema data unavailable after load attempt"
+            )
 
         report_data: list[dict[str, Any]] = []
         for model_name in sorted(self._registry.keys()):
@@ -356,7 +377,7 @@ class BlestaDiscovery:
                 }
             )
 
-        if format == "json":
+        if output_format == "json":
             return json.dumps(report_data, indent=2, sort_keys=True)
 
         # Markdown
@@ -387,8 +408,10 @@ class BlestaDiscovery:
         :return: Number of entries written.
         """
         self._ensure_loaded()
-        assert self._registry is not None
-        assert self._source_map is not None
+        if self._registry is None or self._source_map is None:
+            raise RuntimeError(
+                "BlestaDiscovery: schema data unavailable after load attempt"
+            )
 
         count = 0
         with open(path, "w") as f:

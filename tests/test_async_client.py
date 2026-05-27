@@ -636,14 +636,19 @@ async def test_async_iter_all_start_page(async_api):
     )
 
 
-async def test_async_iter_all_stops_on_falsy_data(async_api):
-    """iter_all treats falsy data (0, False) as end-of-pages."""
+async def test_async_iter_all_yields_falsy_scalar_data(async_api):
+    """iter_all yields falsy scalars (0, False) rather than treating them as empty.
+
+    Previously this test asserted result == [] which was the buggy behavior:
+    falsy scalars were silently dropped instead of being yielded (#10).
+    Non-list responses are yielded as a single item and stop pagination.
+    """
     mock_response = Mock(text=json.dumps({"response": 0}), status_code=200)
     with patch.object(
         async_api.client, "get", new_callable=AsyncMock, return_value=mock_response
     ):
         result = [item async for item in async_api.iter_all("invoices", "getList")]
-    assert result == []
+    assert result == [0]
 
 
 # --- extract() edge cases ---
@@ -1146,8 +1151,35 @@ async def test_async_post_not_retried_by_default(mock_sleep, _mock_random):
 
 @patch("blesta_sdk._async_client.random.random", return_value=1.0)
 @patch("blesta_sdk._async_client.asyncio.sleep", new_callable=AsyncMock)
-async def test_async_retry_mutations(mock_sleep, _mock_random):
-    """POST is retried when retry_mutations=True."""
+async def test_async_retry_mutations_does_not_retry_on_5xx(mock_sleep, _mock_random):
+    """POST with retry_mutations=True must NOT retry on 5xx (#12).
+
+    A 5xx does not guarantee the write never reached Blesta; retrying
+    risks duplicating billing records.
+    """
+    api = AsyncBlestaRequest(
+        "https://example.com/api",
+        "u",
+        "k",
+        max_retries=3,
+        retry_mutations=True,
+    )
+    with patch.object(
+        api.client,
+        "post",
+        new_callable=AsyncMock,
+        return_value=Mock(text="error", status_code=500),
+    ) as mock_post:
+        response = await api.post("clients", "create")
+    assert response.status_code == 500
+    assert mock_post.call_count == 1, "POST must not be retried on 5xx"
+    mock_sleep.assert_not_called()
+
+
+@patch("blesta_sdk._async_client.random.random", return_value=1.0)
+@patch("blesta_sdk._async_client.asyncio.sleep", new_callable=AsyncMock)
+async def test_async_retry_mutations_retries_on_429(mock_sleep, _mock_random):
+    """POST with retry_mutations=True DOES retry on 429 (rate-limit)."""
     api = AsyncBlestaRequest(
         "https://example.com/api",
         "u",
@@ -1156,15 +1188,14 @@ async def test_async_retry_mutations(mock_sleep, _mock_random):
         retry_mutations=True,
     )
     responses = [
-        Mock(text="error", status_code=500),
-        Mock(text='{"response": "ok"}', status_code=200),
+        Mock(text='{"error": "rate limited"}', status_code=429, headers={}),
+        Mock(text='{"response": "ok"}', status_code=200, headers={}),
     ]
     with patch.object(
         api.client, "post", new_callable=AsyncMock, side_effect=responses
     ):
         response = await api.post("clients", "create")
     assert response.status_code == 200
-    mock_sleep.assert_called_once()
 
 
 # --- get_all_fast verify ---
@@ -1532,3 +1563,144 @@ async def test_async_raise_on_error_429_has_retry_after():
         await api.get("clients", "getList")
     assert exc_info.value.retry_after == 30
     assert exc_info.value.headers["Retry-After"] == "30"
+
+
+# --- Lane 3: HTTP opt-in and path validation hardening (#11, #16) ---
+
+
+def test_async_http_base_url_raises_by_default():
+    """http:// base URL must raise ValueError without allow_http=True."""
+    with pytest.raises(ValueError, match="plaintext"):
+        AsyncBlestaRequest("http://example.com/api", "user", "key")
+
+
+def test_async_http_base_url_allowed_with_flag():
+    """http:// base URL is permitted when allow_http=True."""
+    api = AsyncBlestaRequest("http://example.com/api", "user", "key", allow_http=True)
+    assert api.base_url == "http://example.com/api/"
+
+
+def test_async_https_base_url_accepted_by_default():
+    """https:// base URL requires no special flag."""
+    api = AsyncBlestaRequest("https://example.com/api", "user", "key")
+    assert api.base_url.startswith("https://")
+
+
+@pytest.mark.parametrize(
+    "model,method",
+    [
+        ("%2Fadmin", "getList"),
+        ("clients", "%2e%2epasswd"),
+        ("%00", "getList"),
+        ("clients", "%2F%2F"),
+        ("%2f", "getList"),
+    ],
+)
+async def test_async_url_validation_rejects_percent_encoded(model, method):
+    """Percent-encoded path traversal is rejected in async client (#16)."""
+    api = AsyncBlestaRequest("https://example.com/api", "user", "key")
+    with pytest.raises(ValueError, match="percent"):
+        await api.submit(model, method)
+
+
+# --- Lane 7: last_request copy semantics and redaction (#19) ---
+
+
+async def test_async_last_request_args_are_copied(async_api):
+    """Mutating args after submit does not change last_request."""
+    args = {"client_id": 1}
+    mock_response = Mock(text='{"response": {}}', status_code=200, headers={})
+    with patch.object(
+        async_api.client, "get", new_callable=AsyncMock, return_value=mock_response
+    ):
+        await async_api.get("clients", "getList", args)
+    args["client_id"] = 999  # mutate original
+    last = async_api.get_last_request()
+    assert (
+        last["args"]["client_id"] == 1
+    ), "last_request must not reflect post-call mutation"
+
+
+@pytest.mark.parametrize(
+    "sensitive_key",
+    [
+        "password",
+        "passwd",
+        "pass",
+        "token",
+        "api_key",
+        "key",
+        "secret",
+        "card_number",
+        "card",
+        "cvv",
+        "cvc",
+        "account_number",
+        "routing_number",
+    ],
+)
+async def test_async_last_request_redacts_sensitive_keys(async_api, sensitive_key):
+    """Sensitive args are redacted in get_last_request() output (#19)."""
+    args = {sensitive_key: "super-secret-value", "page": 1}
+    mock_response = Mock(text='{"response": {}}', status_code=200, headers={})
+    with patch.object(
+        async_api.client, "post", new_callable=AsyncMock, return_value=mock_response
+    ):
+        await async_api.post("clients", "create", args)
+    last = async_api.get_last_request()
+    assert last["args"][sensitive_key] == "***"
+    assert last["args"]["page"] == 1
+
+
+async def test_async_last_request_non_sensitive_keys_pass_through(async_api):
+    """Non-sensitive args are not redacted."""
+    args = {"client_id": 42, "status": "active"}
+    mock_response = Mock(text='{"response": {}}', status_code=200, headers={})
+    with patch.object(
+        async_api.client, "get", new_callable=AsyncMock, return_value=mock_response
+    ):
+        await async_api.get("clients", "getList", args)
+    last = async_api.get_last_request()
+    assert last["args"]["client_id"] == 42
+    assert last["args"]["status"] == "active"
+
+
+# --- #28: async header auth — client.auth should be None ---
+
+
+def test_async_header_auth_sets_auth_none():
+    """auth_method='header' means client.auth is None (#28)."""
+    api = AsyncBlestaRequest(
+        "https://example.com/api", "myuser", "mykey", auth_method="header"
+    )
+    assert api.client.auth is None
+    assert api.client.headers.get("BLESTA-API-USER") == "myuser"
+    assert api.client.headers.get("BLESTA-API-KEY") == "mykey"
+
+
+# --- #31: get_all_fast(verify=True) count-mismatch path logs warning ---
+
+
+async def test_get_all_fast_verify_count_mismatch_logs_warning(caplog, async_api):
+    """get_all_fast(verify=True) logs warning when count changes (#31)."""
+    import logging
+
+    count1 = Mock(text=json.dumps({"response": 25}), status_code=200)
+    page_data = [{"id": i} for i in range(25)]
+    page_resp = Mock(text=json.dumps({"response": page_data}), status_code=200)
+    count2 = Mock(text=json.dumps({"response": 30}), status_code=200)
+
+    with (
+        patch.object(
+            async_api.client,
+            "get",
+            new_callable=AsyncMock,
+            side_effect=[count1, page_resp, count2],
+        ),
+        caplog.at_level(logging.WARNING),
+    ):
+        result = await async_api.get_all_fast(
+            "clients", "getList", verify=True, page_size=25
+        )
+    assert len(result) == 25
+    assert any("count changed" in r.message for r in caplog.records)

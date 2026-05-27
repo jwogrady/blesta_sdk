@@ -17,6 +17,7 @@ from typing import Any, Literal
 
 import httpx
 
+from blesta_sdk._client import _redact_args
 from blesta_sdk._dateutil import _month_boundaries
 from blesta_sdk._pagination import PaginationState
 from blesta_sdk._response import BlestaResponse
@@ -73,6 +74,13 @@ class AsyncBlestaRequest:
         :meth:`~blesta_sdk.BlestaResponse.raise_for_status` before
         returning, raising a :class:`~blesta_sdk.BlestaError` subclass
         on non-success responses. Defaults to ``False``.
+    :param allow_http: When ``True``, permits ``http://`` base URLs.
+        Defaults to ``False``. HTTP sends credentials in plaintext —
+        only enable this for local development or explicit test
+        environments.
+    :param discovery: Optional :class:`~blesta_sdk.BlestaDiscovery` instance
+        to use instead of the module-level singleton. Useful when loading
+        schemas from a custom path or when injecting a mock in tests.
     """
 
     def __init__(
@@ -88,7 +96,14 @@ class AsyncBlestaRequest:
         max_concurrency: int = 10,
         auth_method: Literal["basic", "header"] = "basic",
         raise_on_error: bool = False,
+        allow_http: bool = False,
+        discovery: Any = None,
     ):
+        if url.startswith("http://") and not allow_http:
+            raise ValueError(
+                "base_url uses HTTP which sends credentials in plaintext. "
+                "Pass allow_http=True to explicitly permit this (local/dev only)."
+            )
         self.base_url = url.rstrip("/") + "/"
         self.user = user
         self.key = key
@@ -97,6 +112,7 @@ class AsyncBlestaRequest:
         self.retry_mutations = retry_mutations
         self.auth_method = auth_method
         self.raise_on_error = raise_on_error
+        self._discovery = discovery
         self._last_request: dict[str, Any] | None = None
         self._semaphore = asyncio.Semaphore(max_concurrency)
         auth = None if auth_method == "header" else httpx.BasicAuth(self.user, self.key)
@@ -133,9 +149,14 @@ class AsyncBlestaRequest:
     def _validate_segment(segment: str, name: str) -> None:
         validate_segment(segment, name)
 
-    @staticmethod
-    def _get_discovery() -> Any:
-        """Return the module-level cached BlestaDiscovery singleton."""
+    def _get_discovery(self) -> Any:
+        """Return the BlestaDiscovery instance for this client.
+
+        Returns the instance passed at construction time if provided,
+        otherwise falls back to the module-level singleton.
+        """
+        if self._discovery is not None:
+            return self._discovery
         from blesta_sdk._discovery import _get_discovery
 
         return _get_discovery()
@@ -221,7 +242,7 @@ class AsyncBlestaRequest:
         self._validate_segment(model, "model")
         self._validate_segment(method, "method")
         url = f"{self.base_url}{model}/{method}.json"
-        request_info = {"url": url, "args": args}
+        request_info = {"url": url, "args": args.copy()}
         self._last_request = request_info
         _last_request_var.set(request_info)
 
@@ -246,9 +267,18 @@ class AsyncBlestaRequest:
                     response.text, response.status_code, response.headers
                 )
 
-                is_retriable = (
-                    response.status_code >= 500 or response.status_code == 429
-                )
+                # Mutations (POST/PUT) must never be retried on 5xx — a server
+                # error does not guarantee the write failed, and retrying risks
+                # duplicate billing records. Only 429 (rate-limit) is safe to
+                # retry for mutations because the request was explicitly rejected
+                # before being processed.
+                is_mutation = action in ("POST", "PUT")
+                if is_mutation:
+                    is_retriable = response.status_code == 429
+                else:
+                    is_retriable = (
+                        response.status_code >= 500 or response.status_code == 429
+                    )
                 if not is_retriable or attempt == effective_retries:
                     if self.raise_on_error:
                         last_response.raise_for_status()
@@ -858,7 +888,17 @@ class AsyncBlestaRequest:
         branch sees only its own last request. Returns ``None`` if no
         requests have been made in the current task context.
 
+        The ``"args"`` value has sensitive keys redacted (replaced with
+        ``"***"``) to prevent accidental credential leakage in logs or CLI
+        output. The actual request payload is not affected.
+
         :return: Dict with ``"url"`` and ``"args"`` keys, or ``None``
             if no requests have been made in this context.
         """
-        return _last_request_var.get(None)
+        info = _last_request_var.get(None)
+        if info is None:
+            return None
+        return {
+            "url": info["url"],
+            "args": _redact_args(info["args"]),
+        }

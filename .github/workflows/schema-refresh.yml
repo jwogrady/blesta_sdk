@@ -1,0 +1,50 @@
+name: Schema Refresh
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'  # weekly, Monday at 06:00 UTC
+  workflow_dispatch:       # allow manual trigger
+
+jobs:
+  refresh-schemas:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Run core schema extractor
+        run: uv run python tools/extract_schema.py
+
+      - name: Run plugin schema extractor
+        run: uv run python tools/extract_plugin_schema.py
+
+      - name: Open PR if schemas changed
+        uses: peter-evans/create-pull-request@v6
+        with:
+          commit-message: "chore(schemas): automated weekly refresh"
+          title: "chore(schemas): automated weekly schema refresh"
+          body: |
+            Automated schema refresh triggered by the weekly schedule.
+
+            Both extraction tools were run against the live Blesta documentation.
+            Review the diff to confirm the changes are expected before merging.
+
+            > ⚠️ Do **not** merge if credentials or personal data appear in the diff.
+          branch: chore/schema-refresh-auto
+          base: master
+          delete-branch: true
+          labels: schemas,automated
