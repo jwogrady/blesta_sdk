@@ -19,7 +19,16 @@ api = BlestaRequest(
     retry_mutations=False,  # True to include POST/PUT in retry loop (429 only, never 5xx)
     pool_connections=10,    # connection pools to cache (default 10)
     pool_maxsize=10,        # max connections per pool (default 10)
+    raise_on_error=False,   # True to raise BlestaError on HTTP errors AND HTTP 200 body errors
+    allow_http=False,       # True to permit http:// URLs (local/dev only — sends key in plaintext)
 )
+```
+
+Use `allow_http=True` only for local development — HTTP sends credentials in plaintext:
+
+```python
+# Local dev only
+api = BlestaRequest("http://localhost/blesta/api", "user", "key", allow_http=True)
 ```
 
 Or as a context manager:
@@ -74,7 +83,7 @@ response.free_raw()      # release raw text to save memory (parsed data still wo
 
 ### Error Handling
 
-No exceptions are raised for HTTP errors. Check the response:
+No exceptions are raised for HTTP errors by default. Check the response:
 
 ```python
 if response.status_code != 200:
@@ -82,6 +91,32 @@ if response.status_code != 200:
 
 if response.status_code == 0:
     print("Network error:", response.raw)
+```
+
+> **Important:** Blesta can return HTTP 200 with an `errors` key for validation failures
+> (e.g., duplicate client, missing required field). A `status_code` of 200 does **not**
+> guarantee the write succeeded. Always check `response.errors()`:
+
+```python
+response = api.post("clients", "create", payload)
+if response.status_code == 200 and not response.errors():
+    target_id = response.data["id"]
+else:
+    print("Create failed:", response.errors())
+```
+
+Use `raise_on_error=True` to raise automatically on HTTP errors **and** HTTP 200 body errors:
+
+```python
+from blesta_sdk import BlestaRequest, BlestaAPIError
+
+api = BlestaRequest(url, user, key, raise_on_error=True)
+
+try:
+    response = api.post("clients", "create", payload)
+    target_id = response.data["id"]
+except BlestaAPIError as exc:
+    print(exc.errors)
 ```
 
 ## Pagination
@@ -294,12 +329,52 @@ In concurrent contexts, `get_last_request()` returns the last request from the c
 last = api.get_last_request()
 ```
 
-## Debugging
+## Environment Configuration
+
+`BlestaEnvConfig` selects credentials for a named deployment environment (`dev`, `stage`, or
+`live`) from environment variables. No fallback between environments — missing `stage` vars
+will never silently read `live` values.
+
+```python
+from blesta_sdk import BlestaEnvConfig
+
+# Reads BLESTA_STAGE_URL, BLESTA_STAGE_USER, BLESTA_STAGE_KEY from env
+cfg = BlestaEnvConfig("stage")
+api = cfg.client(auth_method="header", raise_on_error=True)
+response = api.get("clients", "getList")
+```
+
+Override credentials inline (useful in tests):
+
+```python
+cfg = BlestaEnvConfig("dev", url="https://dev.example.com/api", user="u", key="k")
+api = cfg.client(max_retries=3)
+```
+
+`.env` file support requires `pip install blesta_sdk[cli]`. See `.env.example` for the
+full variable template.
+
+## Debugging and Redaction
+
+`get_last_request()` returns the URL and args of the most recent request. Sensitive
+fields are automatically redacted in the returned dict — the actual HTTP request is
+not modified:
 
 ```python
 # Inspect the last request URL and parameters
 response = api.get("clients", "getList", {"status": "active"})
 last = api.get_last_request()
 print(last["url"])   # "https://example.com/api/clients/getList.json"
-print(last["args"])  # {"status": "active"}
+print(last["args"])  # {"status": "active"} — sensitive keys replaced with "***"
 ```
+
+Redacted fields:
+- Exact matches: `password`, `token`, `api_key`, `secret`, `card_number`, `cvv`, `ssn`, `pin`
+- Suffix matches: any key ending in `_key`, `_secret`, `_password`, or `_token`
+- Nested dicts and lists are redacted recursively
+
+The redacted dict is safe to log or include in debug output. It will not expose API keys,
+passwords, or payment data even when structured payloads contain nested credentials.
+
+In async contexts, `get_last_request()` returns the last request for the **current asyncio
+task** (via `ContextVar`). Concurrent tasks each see their own last request.
