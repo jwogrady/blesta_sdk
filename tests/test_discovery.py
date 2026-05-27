@@ -2,6 +2,7 @@
 
 import json
 import logging
+from unittest.mock import patch
 
 import pytest
 
@@ -419,6 +420,53 @@ def test_bundled_schema_missing_file():
     from blesta_sdk._discovery import _bundled_schema_text
 
     assert _bundled_schema_text("nonexistent.json") is None
+
+
+def test_load_bundled_schema_none_text(caplog):
+    """_load_bundled_schema logs a warning when _bundled_schema_text returns None.
+
+    Covers _discovery.py lines 158-159.
+    """
+    from blesta_sdk._discovery import BlestaDiscovery
+
+    disco = BlestaDiscovery()
+    disco._registry = {}
+    disco._source_map = {}
+    disco._pagination_map = {}
+
+    with (
+        patch("blesta_sdk._discovery._bundled_schema_text", return_value=None),
+        caplog.at_level(logging.WARNING),
+    ):
+        disco._load_bundled_schema("nonexistent.json", "core")
+
+    assert any("not found" in r.message for r in caplog.records)
+
+
+def test_load_bundled_schema_invalid_json(caplog):
+    """_load_bundled_schema logs a warning and returns on JSONDecodeError.
+
+    Covers _discovery.py lines 162-164.
+    """
+    import logging
+
+    from blesta_sdk._discovery import BlestaDiscovery
+
+    disco = BlestaDiscovery()
+    disco._registry = {}
+    disco._source_map = {}
+    disco._pagination_map = {}
+
+    with (
+        patch(
+            "blesta_sdk._discovery._bundled_schema_text",
+            return_value="not valid json {{{",
+        ),
+        caplog.at_level(logging.WARNING),
+    ):
+        disco._load_bundled_schema("bad.json", "core")
+
+    assert any("Invalid JSON" in r.message for r in caplog.records)
 
 
 def test_method_spec_is_frozen():
