@@ -1691,17 +1691,17 @@ async def test_async_last_request_args_are_copied(async_api):
     [
         "password",
         "passwd",
-        "pass",
         "token",
         "api_key",
-        "key",
         "secret",
+        "private_key",
         "card_number",
-        "card",
         "cvv",
         "cvc",
         "account_number",
         "routing_number",
+        "ssn",
+        "pin",
     ],
 )
 async def test_async_last_request_redacts_sensitive_keys(async_api, sensitive_key):
