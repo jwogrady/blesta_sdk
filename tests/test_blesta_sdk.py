@@ -28,6 +28,7 @@ def test_all_exports():
         "BlestaAuthError",
         "BlestaConnectionError",
         "BlestaDiscovery",
+        "BlestaEnvConfig",
         "BlestaError",
         "BlestaRateLimitError",
         "BlestaRequest",
