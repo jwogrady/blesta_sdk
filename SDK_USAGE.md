@@ -15,8 +15,8 @@ api = BlestaRequest(
     key="api_key",
     auth_method="header",   # or "basic" (default)
     timeout=30,             # seconds, default 30
-    max_retries=3,          # exponential backoff with jitter on 5xx/network errors
-    retry_mutations=False,  # True to also retry POST/PUT (default: only GET/DELETE)
+    max_retries=3,          # GET/DELETE: retry on 5xx/network errors/429; POST/PUT: 429 only
+    retry_mutations=False,  # True to include POST/PUT in retry loop (429 only, never 5xx)
     pool_connections=10,    # connection pools to cache (default 10)
     pool_maxsize=10,        # max connections per pool (default 10)
 )
@@ -215,7 +215,7 @@ disco.resolve_http_method("Unknown", "unknown")        # "POST" (default)
 disco.suggest_pagination_pair("Clients", "getList")    # "getListCount"
 
 # Generate reports
-print(disco.generate_capabilities_report(format="markdown"))
+print(disco.generate_capabilities_report(output_format="markdown"))
 disco.generate_ai_index("blesta_api_index.jsonl")  # returns entry count
 ```
 
@@ -276,8 +276,10 @@ AsyncBlestaRequest(
     url, user, key,
     max_connections=10,              # instead of pool_connections
     max_keepalive_connections=10,    # instead of pool_maxsize
-    max_concurrency=10,             # shared semaphore for concurrent requests
-    retry_mutations=False,          # same as sync client
+    max_concurrency=10,              # shared semaphore for concurrent requests
+    retry_mutations=False,           # same as sync client (POST/PUT: 429 only, never 5xx)
+    allow_http=False,                # permit http:// URLs (local/dev only)
+    discovery=None,                  # inject custom BlestaDiscovery instance
 )
 ```
 
