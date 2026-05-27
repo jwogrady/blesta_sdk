@@ -62,6 +62,13 @@ class BlestaRequest:
         :meth:`~blesta_sdk.BlestaResponse.raise_for_status` before
         returning, raising a :class:`~blesta_sdk.BlestaError` subclass
         on non-success responses. Defaults to ``False``.
+    :param allow_http: When ``True``, permits ``http://`` base URLs.
+        Defaults to ``False``. HTTP sends credentials in plaintext —
+        only enable this for local development or explicit test
+        environments.
+    :param discovery: Optional :class:`~blesta_sdk.BlestaDiscovery` instance
+        to use instead of the module-level singleton. Useful when loading
+        schemas from a custom path or when injecting a mock in tests.
     """
 
     def __init__(
@@ -76,7 +83,14 @@ class BlestaRequest:
         pool_maxsize: int = 10,
         auth_method: Literal["basic", "header"] = "basic",
         raise_on_error: bool = False,
+        allow_http: bool = False,
+        discovery: Any = None,
     ):
+        if url.startswith("http://") and not allow_http:
+            raise ValueError(
+                "base_url uses HTTP which sends credentials in plaintext. "
+                "Pass allow_http=True to explicitly permit this (local/dev only)."
+            )
         self.base_url = url.rstrip("/") + "/"
         self.user = user
         self.key = key
@@ -85,6 +99,7 @@ class BlestaRequest:
         self.retry_mutations = retry_mutations
         self.auth_method = auth_method
         self.raise_on_error = raise_on_error
+        self._discovery = discovery
         self._last_request: dict[str, Any] | None = None
         self.session = requests.Session()
         if auth_method == "header":
@@ -116,9 +131,14 @@ class BlestaRequest:
     def _validate_segment(segment: str, name: str) -> None:
         validate_segment(segment, name)
 
-    @staticmethod
-    def _get_discovery() -> Any:
-        """Return the module-level cached BlestaDiscovery singleton."""
+    def _get_discovery(self) -> Any:
+        """Return the BlestaDiscovery instance for this client.
+
+        Returns the instance passed at construction time if provided,
+        otherwise falls back to the module-level singleton.
+        """
+        if self._discovery is not None:
+            return self._discovery
         from blesta_sdk._discovery import _get_discovery
 
         return _get_discovery()
@@ -227,9 +247,18 @@ class BlestaRequest:
                     response.text, response.status_code, response.headers
                 )
 
-                is_retriable = (
-                    response.status_code >= 500 or response.status_code == 429
-                )
+                # Mutations (POST/PUT) must never be retried on 5xx — a server
+                # error does not guarantee the write failed, and retrying risks
+                # duplicate billing records. Only 429 (rate-limit) is safe to
+                # retry for mutations because the request was explicitly rejected
+                # before being processed.
+                is_mutation = action in ("POST", "PUT")
+                if is_mutation:
+                    is_retriable = response.status_code == 429
+                else:
+                    is_retriable = (
+                        response.status_code >= 500 or response.status_code == 429
+                    )
                 if not is_retriable or attempt == effective_retries:
                     if self.raise_on_error:
                         last_response.raise_for_status()

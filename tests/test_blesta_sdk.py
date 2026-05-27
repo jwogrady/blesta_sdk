@@ -1863,8 +1863,50 @@ def test_put_not_retried_by_default(mock_sleep, _mock_random):
 
 @patch("blesta_sdk._client.random.random", return_value=1.0)
 @patch("blesta_sdk._client.time.sleep")
-def test_retry_mutations_enables_post_retry(mock_sleep, _mock_random):
-    """POST is retried when retry_mutations=True."""
+def test_retry_mutations_does_not_retry_post_on_5xx(mock_sleep, _mock_random):
+    """POST with retry_mutations=True must NOT retry on 5xx (#12).
+
+    A 5xx does not guarantee the write never reached Blesta; retrying
+    can duplicate billing records. 5xx mutations return immediately.
+    """
+    api = BlestaRequest(
+        "https://test.example.com/api",
+        "u",
+        "k",
+        max_retries=3,
+        retry_mutations=True,
+    )
+    with patch.object(api.session, "post") as mock_post:
+        mock_post.return_value = Mock(text="error", status_code=500)
+        response = api.post("clients", "create")
+    assert response.status_code == 500
+    assert mock_post.call_count == 1, "POST must not be retried on 5xx"
+    mock_sleep.assert_not_called()
+
+
+@patch("blesta_sdk._client.random.random", return_value=1.0)
+@patch("blesta_sdk._client.time.sleep")
+def test_retry_mutations_does_not_retry_put_on_5xx(mock_sleep, _mock_random):
+    """PUT with retry_mutations=True must NOT retry on 5xx (#12)."""
+    api = BlestaRequest(
+        "https://test.example.com/api",
+        "u",
+        "k",
+        max_retries=3,
+        retry_mutations=True,
+    )
+    with patch.object(api.session, "put") as mock_put:
+        mock_put.return_value = Mock(text="error", status_code=503)
+        response = api.put("clients", "edit")
+    assert response.status_code == 503
+    assert mock_put.call_count == 1, "PUT must not be retried on 5xx"
+    mock_sleep.assert_not_called()
+
+
+@patch("blesta_sdk._client.random.random", return_value=1.0)
+@patch("blesta_sdk._client.time.sleep")
+def test_retry_mutations_retries_post_on_429(mock_sleep, _mock_random):
+    """POST with retry_mutations=True DOES retry on 429 (rate-limit)."""
     api = BlestaRequest(
         "https://test.example.com/api",
         "u",
@@ -1874,13 +1916,32 @@ def test_retry_mutations_enables_post_retry(mock_sleep, _mock_random):
     )
     with patch.object(api.session, "post") as mock_post:
         mock_post.side_effect = [
-            Mock(text="error", status_code=500),
-            Mock(text='{"response": "ok"}', status_code=200),
+            Mock(text='{"error": "rate limited"}', status_code=429, headers={}),
+            Mock(text='{"response": "ok"}', status_code=200, headers={}),
         ]
         response = api.post("clients", "create")
     assert response.status_code == 200
     assert mock_post.call_count == 2
-    mock_sleep.assert_called_once()
+
+
+@patch("blesta_sdk._client.random.random", return_value=1.0)
+@patch("blesta_sdk._client.time.sleep")
+def test_get_retry_on_5xx_unchanged(mock_sleep, _mock_random):
+    """GET retry on 5xx behavior is unchanged (#12)."""
+    api = BlestaRequest(
+        "https://test.example.com/api",
+        "u",
+        "k",
+        max_retries=1,
+    )
+    with patch.object(api.session, "get") as mock_get:
+        mock_get.side_effect = [
+            Mock(text="error", status_code=500, headers={}),
+            Mock(text='{"response": []}', status_code=200, headers={}),
+        ]
+        response = api.get("clients", "getList")
+    assert response.status_code == 200
+    assert mock_get.call_count == 2
 
 
 @patch("blesta_sdk._client.random.random", return_value=0.0)
@@ -2364,6 +2425,43 @@ def test_iter_all_alternating_page_loop_detected(blesta_request):
     assert calls_made <= 7, f"Expected abort within 7 pages, got {calls_made}"
     # Items from the aborted pages: at most 6 pages × 1 item each
     assert len(result) <= 6
+
+
+# --- Lane 3: HTTP opt-in and path validation hardening (#11, #16) ---
+
+
+def test_http_base_url_raises_by_default():
+    """http:// base URL must raise ValueError without allow_http=True."""
+    with pytest.raises(ValueError, match="plaintext"):
+        BlestaRequest("http://example.com/api", "user", "key")
+
+
+def test_http_base_url_allowed_with_flag():
+    """http:// base URL is permitted when allow_http=True."""
+    api = BlestaRequest("http://example.com/api", "user", "key", allow_http=True)
+    assert api.base_url == "http://example.com/api/"
+
+
+def test_https_base_url_accepted_by_default():
+    """https:// base URL requires no special flag."""
+    api = BlestaRequest("https://example.com/api", "user", "key")
+    assert api.base_url.startswith("https://")
+
+
+@pytest.mark.parametrize(
+    "model,method",
+    [
+        ("%2Fadmin", "getList"),
+        ("clients", "%2e%2epasswd"),
+        ("%00", "getList"),
+        ("clients", "%2F%2F"),
+        ("%2f", "getList"),
+    ],
+)
+def test_url_validation_rejects_percent_encoded(blesta_request, model, method):
+    """Percent-encoded path traversal is rejected (#16)."""
+    with pytest.raises(ValueError, match="percent"):
+        blesta_request.submit(model, method)
 
 
 if __name__ == "__main__":
