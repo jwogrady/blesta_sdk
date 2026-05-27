@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(uv run pytest *)",
+      "Bash(uv run ruff *)",
+      "Bash(uv run black *)",
+      "Bash(uv build*)",
+      "Bash(uv sync*)"
+    ]
+  }
+}
