@@ -278,7 +278,7 @@ def test_suggest_pagination_pair_no_pagination_key(disco):
 
 
 def test_capabilities_report_markdown(disco):
-    report = disco.generate_capabilities_report(format="markdown")
+    report = disco.generate_capabilities_report(output_format="markdown")
     assert "# Blesta API Capabilities Report" in report
     assert "## Clients" in report
     assert "## Invoices" in report
@@ -290,7 +290,7 @@ def test_capabilities_report_markdown(disco):
 
 
 def test_capabilities_report_json(disco):
-    report = disco.generate_capabilities_report(format="json")
+    report = disco.generate_capabilities_report(output_format="json")
     data = json.loads(report)
     assert isinstance(data, list)
     model_names = [m["model"] for m in data]

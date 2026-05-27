@@ -66,6 +66,9 @@ class BlestaRequest:
         Defaults to ``False``. HTTP sends credentials in plaintext —
         only enable this for local development or explicit test
         environments.
+    :param discovery: Optional :class:`~blesta_sdk.BlestaDiscovery` instance
+        to use instead of the module-level singleton. Useful when loading
+        schemas from a custom path or when injecting a mock in tests.
     """
 
     def __init__(
@@ -81,6 +84,7 @@ class BlestaRequest:
         auth_method: Literal["basic", "header"] = "basic",
         raise_on_error: bool = False,
         allow_http: bool = False,
+        discovery: Any = None,
     ):
         if url.startswith("http://") and not allow_http:
             raise ValueError(
@@ -95,6 +99,7 @@ class BlestaRequest:
         self.retry_mutations = retry_mutations
         self.auth_method = auth_method
         self.raise_on_error = raise_on_error
+        self._discovery = discovery
         self._last_request: dict[str, Any] | None = None
         self.session = requests.Session()
         if auth_method == "header":
@@ -126,9 +131,14 @@ class BlestaRequest:
     def _validate_segment(segment: str, name: str) -> None:
         validate_segment(segment, name)
 
-    @staticmethod
-    def _get_discovery() -> Any:
-        """Return the module-level cached BlestaDiscovery singleton."""
+    def _get_discovery(self) -> Any:
+        """Return the BlestaDiscovery instance for this client.
+
+        Returns the instance passed at construction time if provided,
+        otherwise falls back to the module-level singleton.
+        """
+        if self._discovery is not None:
+            return self._discovery
         from blesta_sdk._discovery import _get_discovery
 
         return _get_discovery()
