@@ -73,6 +73,10 @@ class AsyncBlestaRequest:
         :meth:`~blesta_sdk.BlestaResponse.raise_for_status` before
         returning, raising a :class:`~blesta_sdk.BlestaError` subclass
         on non-success responses. Defaults to ``False``.
+    :param allow_http: When ``True``, permits ``http://`` base URLs.
+        Defaults to ``False``. HTTP sends credentials in plaintext —
+        only enable this for local development or explicit test
+        environments.
     """
 
     def __init__(
@@ -88,7 +92,13 @@ class AsyncBlestaRequest:
         max_concurrency: int = 10,
         auth_method: Literal["basic", "header"] = "basic",
         raise_on_error: bool = False,
+        allow_http: bool = False,
     ):
+        if url.startswith("http://") and not allow_http:
+            raise ValueError(
+                "base_url uses HTTP which sends credentials in plaintext. "
+                "Pass allow_http=True to explicitly permit this (local/dev only)."
+            )
         self.base_url = url.rstrip("/") + "/"
         self.user = user
         self.key = key
