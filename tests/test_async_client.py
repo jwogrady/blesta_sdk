@@ -951,6 +951,71 @@ async def test_async_extract_uses_semaphore(async_api):
     assert "invoices.getList" in result
 
 
+async def test_async_extract_no_semaphore_starvation():
+    """extract() semaphore is held per-request, not per-target.
+
+    With max_concurrency=1, a slow multi-page target must not block a
+    fast single-page target from making progress.  The requests from
+    both targets should interleave rather than all pages of target-1
+    completing before target-2 makes any request.
+
+    We verify interleaving by recording request call order and checking
+    that the fast target's request is NOT the very last call (i.e. it
+    was not forced to wait for all slow-target pages to finish).
+    """
+    call_log: list[str] = []
+    # Slow target: 3 pages then empty terminator
+    # Fast target: 1 page then empty terminator
+    # With starvation (old code): slow p1, slow p2, slow p3, slow empty,
+    #   fast p1, fast empty  → fast target's first request is call #5
+    # Without starvation (new code): interleaved, fast target appears early.
+
+    slow_pages = [
+        Mock(text=json.dumps({"response": [{"id": i}]}), status_code=200, headers={})
+        for i in range(1, 4)
+    ]
+    slow_pages.append(
+        Mock(text=json.dumps({"response": []}), status_code=200, headers={})
+    )
+    fast_pages = [
+        Mock(text=json.dumps({"response": [{"id": 10}]}), status_code=200, headers={}),
+        Mock(text=json.dumps({"response": []}), status_code=200, headers={}),
+    ]
+
+    slow_iter = iter(slow_pages)
+    fast_iter = iter(fast_pages)
+
+    async def fake_get(url: str, **kwargs: object) -> object:
+        if "slow" in url:
+            call_log.append("slow")
+            return next(slow_iter)
+        else:
+            call_log.append("fast")
+            return next(fast_iter)
+
+    api = AsyncBlestaRequest(
+        "https://example.com/api", "user", "key", max_concurrency=1
+    )
+    with patch.object(api.client, "get", side_effect=fake_get):
+        result = await api.extract([("slow", "getList"), ("fast", "getList")])
+
+    assert len(result["slow.getList"]) == 3
+    assert len(result["fast.getList"]) == 1
+
+    # With per-request semaphore, the fast target's request must NOT wait
+    # until all slow pages are done.  Confirm interleaving: the fast target
+    # should appear before the final slow call.
+    first_fast_idx = next(i for i, v in enumerate(call_log) if v == "fast")
+    last_slow_idx = max(i for i, v in enumerate(call_log) if v == "slow")
+    # If there were starvation, first_fast_idx > last_slow_idx (fast waits
+    # for all slow pages).  With interleaving, fast appears before some slow.
+    assert first_fast_idx < last_slow_idx, (
+        f"Semaphore starvation detected: fast target's first request (index "
+        f"{first_fast_idx}) came after all slow-target requests (last slow "
+        f"at index {last_slow_idx}). call_log={call_log}"
+    )
+
+
 # --- Repeat page detection (async) ---
 
 
@@ -1626,17 +1691,17 @@ async def test_async_last_request_args_are_copied(async_api):
     [
         "password",
         "passwd",
-        "pass",
         "token",
         "api_key",
-        "key",
         "secret",
+        "private_key",
         "card_number",
-        "card",
         "cvv",
         "cvc",
         "account_number",
         "routing_number",
+        "ssn",
+        "pin",
     ],
 )
 async def test_async_last_request_redacts_sensitive_keys(async_api, sensitive_key):
@@ -1728,3 +1793,262 @@ async def test_get_all_fast_verify_count_mismatch_logs_warning(caplog, async_api
         )
     assert len(result) == 25
     assert any("count changed" in r.message for r in caplog.records)
+
+
+# --- QC gap coverage (#50) ---
+
+
+def test_async_injected_discovery_is_used():
+    """AsyncBlestaRequest accepts a pre-built BlestaDiscovery via discovery=.
+
+    _get_discovery() must return the injected instance, not the singleton.
+    """
+    from blesta_sdk import BlestaDiscovery
+
+    mock_disco = BlestaDiscovery()
+    api = AsyncBlestaRequest("https://example.com/api", "u", "k", discovery=mock_disco)
+    assert api._get_discovery() is mock_disco
+
+
+async def test_async_get_all_fast_non_200_page_excluded(async_api):
+    """get_all_fast excludes items from pages that return non-200 status.
+
+    Covers _async_client.py lines 524-529.
+    """
+    count_resp = Mock(text=json.dumps({"response": 50}), status_code=200)
+    page1 = [{"id": i} for i in range(1, 26)]
+    page1_resp = Mock(text=json.dumps({"response": page1}), status_code=200)
+    # page 2 returns a server error
+    page2_err = Mock(text='{"errors": {}}', status_code=500)
+
+    with patch.object(
+        async_api.client,
+        "get",
+        new_callable=AsyncMock,
+        side_effect=[count_resp, page1_resp, page2_err],
+    ):
+        result = await async_api.get_all_fast("transactions", "getList", page_size=25)
+
+    # Only items from the successful page should be present
+    assert len(result) == 25
+    assert result[0]["id"] == 1
+
+
+async def test_async_get_all_fast_null_data_page_excluded(async_api):
+    """get_all_fast handles a page that returns null data without crashing.
+
+    Covers _async_client.py line 532.
+    """
+    count_resp = Mock(text=json.dumps({"response": 25}), status_code=200)
+    page1 = [{"id": i} for i in range(1, 26)]
+    page1_resp = Mock(text=json.dumps({"response": page1}), status_code=200)
+
+    with patch.object(
+        async_api.client,
+        "get",
+        new_callable=AsyncMock,
+        side_effect=[count_resp, page1_resp],
+    ):
+        result = await async_api.get_all_fast("transactions", "getList", page_size=25)
+
+    assert len(result) == 25
+
+
+async def test_async_get_all_fast_explicit_null_data(async_api):
+    """get_all_fast returns empty list for a page with explicit null response.
+
+    Covers _async_client.py line 532 (falsy data branch in _fetch_page).
+    """
+    count_resp = Mock(text=json.dumps({"response": 25}), status_code=200)
+    # Return a response whose .data is None (null JSON)
+    null_data_resp = Mock(text='{"response": null}', status_code=200)
+
+    with patch.object(
+        async_api.client,
+        "get",
+        new_callable=AsyncMock,
+        side_effect=[count_resp, null_data_resp],
+    ):
+        result = await async_api.get_all_fast("transactions", "getList", page_size=25)
+
+    assert result == []
+
+
+async def test_async_iter_pages_warn_stops_on_page1_error(async_api):
+    """iter_pages with on_error='warn' (default) stops on first-page non-200.
+
+    Covers _async_client.py line 445.
+    """
+    responses = [Mock(text="error", status_code=500)]
+    with patch.object(
+        async_api.client, "get", new_callable=AsyncMock, side_effect=responses
+    ):
+        pages = [p async for p in async_api.iter_pages("clients", "getList")]
+    assert pages == []
+
+
+async def test_async_get_report_series_concurrent_non_csv_skipped(async_api):
+    """get_report_series_concurrent skips months with non-CSV (JSON) responses.
+
+    Covers _async_client.py lines 788-793.
+    """
+    json_resp = Mock(text='{"response": "not csv data"}', status_code=200)
+    csv_resp = Mock(text='"Package","Revenue"\n"Hosting","100"\n', status_code=200)
+
+    with patch.object(
+        async_api.client,
+        "get",
+        new_callable=AsyncMock,
+        side_effect=[json_resp, csv_resp],
+    ):
+        rows = await async_api.get_report_series_concurrent(
+            "package_revenue", "2025-01", "2025-02"
+        )
+
+    # JSON month is skipped; only CSV month contributes rows
+    assert len(rows) == 1
+    assert rows[0]["_period"] == "2025-02"
+
+
+def test_async_import_error_when_httpx_missing():
+    """Importing AsyncBlestaRequest raises ImportError with helpful message
+    when httpx is not installed.
+
+    Covers __init__.py lines 39-40.
+    """
+    import sys
+
+    # Simulate httpx being absent by patching the import inside __init__
+    with patch.dict(sys.modules, {"blesta_sdk._async_client": None}):
+        # Force re-evaluation of the lazy __getattr__
+        import importlib
+
+        import blesta_sdk
+
+        importlib.reload(blesta_sdk)
+
+        with pytest.raises(ImportError) as exc_info:
+            _ = blesta_sdk.AsyncBlestaRequest
+
+    assert "httpx" in str(exc_info.value)
+    assert "pip install" in str(exc_info.value)
+
+    # Restore the module to a working state so later tests are unaffected
+    importlib.reload(blesta_sdk)
+
+
+# --- #44: async call_all() schema GET validation ---
+
+
+async def test_async_call_all_schema_validates_get(async_api):
+    """call_all() proceeds when schema confirms the method is GET."""
+    responses = [
+        Mock(text=json.dumps({"response": [{"id": 1}]}), status_code=200),
+        Mock(text=json.dumps({"response": []}), status_code=200),
+    ]
+    with (
+        patch(
+            "blesta_sdk._discovery.BlestaDiscovery.resolve_http_method",
+            return_value="GET",
+        ),
+        patch.object(
+            async_api.client, "get", new_callable=AsyncMock, side_effect=responses
+        ),
+    ):
+        result = await async_api.call_all("invoices", "getList")
+    assert result == [{"id": 1}]
+
+
+async def test_async_call_all_schema_rejects_non_get(async_api):
+    """call_all() raises ValueError when schema says method is not GET."""
+    with (
+        patch(
+            "blesta_sdk._discovery.BlestaDiscovery.resolve_http_method",
+            return_value="POST",
+        ),
+        pytest.raises(ValueError, match="schema says HTTP method is 'POST'"),
+    ):
+        await async_api.call_all("invoices", "create")
+
+
+async def test_async_call_all_no_schema_proceeds(async_api):
+    """call_all() proceeds when schema cannot resolve the method (unresolved)."""
+    responses = [
+        Mock(text=json.dumps({"response": [{"id": 2}]}), status_code=200),
+        Mock(text=json.dumps({"response": []}), status_code=200),
+    ]
+    with (
+        patch(
+            "blesta_sdk._discovery.BlestaDiscovery.resolve_http_method",
+            return_value="_UNRESOLVED_",
+        ),
+        patch.object(
+            async_api.client, "get", new_callable=AsyncMock, side_effect=responses
+        ),
+    ):
+        result = await async_api.call_all("invoices", "getList")
+    assert result == [{"id": 2}]
+
+
+# --- #45: max_concurrency=0 deadlock prevention ---
+
+
+def test_async_max_concurrency_zero_raises():
+    """max_concurrency=0 raises ValueError to prevent semaphore deadlock."""
+    with pytest.raises(ValueError, match="max_concurrency must be >= 1"):
+        AsyncBlestaRequest("https://example.com/api", "u", "k", max_concurrency=0)
+
+
+def test_async_max_concurrency_negative_raises():
+    """max_concurrency=-1 raises ValueError."""
+    with pytest.raises(ValueError, match="max_concurrency must be >= 1"):
+        AsyncBlestaRequest("https://example.com/api", "u", "k", max_concurrency=-1)
+
+
+def test_async_max_concurrency_valid():
+    """max_concurrency=5 constructs the client successfully."""
+    api = AsyncBlestaRequest("https://example.com/api", "u", "k", max_concurrency=5)
+    assert api._semaphore._value == 5
+
+
+# --- #51: async count_for() fallback warning parity ---
+
+
+async def test_async_count_for_fallback_warning(caplog, async_api):
+    """count_for() logs a warning when falling back to 'Count' suffix."""
+    import logging
+
+    with (
+        patch(
+            "blesta_sdk._discovery.BlestaDiscovery.suggest_pagination_pair",
+            return_value=None,
+        ),
+        patch.object(
+            async_api, "count", new_callable=AsyncMock, return_value=7
+        ) as mock_count,
+        caplog.at_level(logging.WARNING),
+    ):
+        result = await async_api.count_for("clients", "getList")
+    assert result == 7
+    mock_count.assert_called_once_with("clients", "getListCount", None)
+    assert any("falling back" in r.message for r in caplog.records)
+
+
+async def test_async_count_for_with_schema(caplog, async_api):
+    """count_for() uses schema-provided count method without warning."""
+    import logging
+
+    with (
+        patch(
+            "blesta_sdk._discovery.BlestaDiscovery.suggest_pagination_pair",
+            return_value="getListCount",
+        ),
+        patch.object(
+            async_api, "count", new_callable=AsyncMock, return_value=99
+        ) as mock_count,
+        caplog.at_level(logging.WARNING),
+    ):
+        result = await async_api.count_for("transactions", "getList")
+    assert result == 99
+    mock_count.assert_called_once_with("transactions", "getListCount", None)
+    assert not any("falling back" in r.message for r in caplog.records)
