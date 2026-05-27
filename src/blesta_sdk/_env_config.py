@@ -15,7 +15,7 @@ Usage::
 
     cfg = BlestaEnvConfig("stage")
     client = cfg.client()
-    resp = client.submit("GET", "clients", "list")
+    resp = client.get("clients", "getList")
 """
 
 from __future__ import annotations

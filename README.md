@@ -323,7 +323,7 @@ disco.resolve_http_method("Clients", "create")         # "POST"
 disco.suggest_pagination_pair("Clients", "getList")    # "getListCount"
 
 # Generate a capabilities report
-print(disco.generate_capabilities_report(format="markdown"))
+print(disco.generate_capabilities_report(output_format="markdown"))
 
 # Generate JSONL index for AI embeddings
 disco.generate_ai_index("blesta_api_index.jsonl")
@@ -452,7 +452,7 @@ Same methods as `BlestaRequest`, all `async`. Additional async-specific methods:
 | `get_method_spec(model, method)` | Get full `MethodSpec` dataclass for a method |
 | `resolve_http_method(model, method, default="POST")` | Resolve HTTP method from schema |
 | `suggest_pagination_pair(model, list_method="getList")` | Find the count method for a list method |
-| `generate_capabilities_report(format="markdown")` | Generate API capabilities report |
+| `generate_capabilities_report(output_format="markdown")` | Generate API capabilities report |
 | `generate_ai_index(path)` | Write JSONL index for AI embeddings |
 
 ### `BlestaResponse`
