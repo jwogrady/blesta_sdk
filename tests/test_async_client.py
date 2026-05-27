@@ -1728,3 +1728,120 @@ async def test_get_all_fast_verify_count_mismatch_logs_warning(caplog, async_api
         )
     assert len(result) == 25
     assert any("count changed" in r.message for r in caplog.records)
+
+
+# --- #44: async call_all() schema GET validation ---
+
+
+async def test_async_call_all_schema_validates_get(async_api):
+    """call_all() proceeds when schema confirms the method is GET."""
+    responses = [
+        Mock(text=json.dumps({"response": [{"id": 1}]}), status_code=200),
+        Mock(text=json.dumps({"response": []}), status_code=200),
+    ]
+    with (
+        patch(
+            "blesta_sdk._discovery.BlestaDiscovery.resolve_http_method",
+            return_value="GET",
+        ),
+        patch.object(
+            async_api.client, "get", new_callable=AsyncMock, side_effect=responses
+        ),
+    ):
+        result = await async_api.call_all("invoices", "getList")
+    assert result == [{"id": 1}]
+
+
+async def test_async_call_all_schema_rejects_non_get(async_api):
+    """call_all() raises ValueError when schema says method is not GET."""
+    with (
+        patch(
+            "blesta_sdk._discovery.BlestaDiscovery.resolve_http_method",
+            return_value="POST",
+        ),
+        pytest.raises(ValueError, match="schema says HTTP method is 'POST'"),
+    ):
+        await async_api.call_all("invoices", "create")
+
+
+async def test_async_call_all_no_schema_proceeds(async_api):
+    """call_all() proceeds when schema cannot resolve the method (unresolved)."""
+    responses = [
+        Mock(text=json.dumps({"response": [{"id": 2}]}), status_code=200),
+        Mock(text=json.dumps({"response": []}), status_code=200),
+    ]
+    with (
+        patch(
+            "blesta_sdk._discovery.BlestaDiscovery.resolve_http_method",
+            return_value="_UNRESOLVED_",
+        ),
+        patch.object(
+            async_api.client, "get", new_callable=AsyncMock, side_effect=responses
+        ),
+    ):
+        result = await async_api.call_all("invoices", "getList")
+    assert result == [{"id": 2}]
+
+
+# --- #45: max_concurrency=0 deadlock prevention ---
+
+
+def test_async_max_concurrency_zero_raises():
+    """max_concurrency=0 raises ValueError to prevent semaphore deadlock."""
+    with pytest.raises(ValueError, match="max_concurrency must be >= 1"):
+        AsyncBlestaRequest("https://example.com/api", "u", "k", max_concurrency=0)
+
+
+def test_async_max_concurrency_negative_raises():
+    """max_concurrency=-1 raises ValueError."""
+    with pytest.raises(ValueError, match="max_concurrency must be >= 1"):
+        AsyncBlestaRequest("https://example.com/api", "u", "k", max_concurrency=-1)
+
+
+def test_async_max_concurrency_valid():
+    """max_concurrency=5 constructs the client successfully."""
+    api = AsyncBlestaRequest("https://example.com/api", "u", "k", max_concurrency=5)
+    assert api._semaphore._value == 5
+
+
+# --- #51: async count_for() fallback warning parity ---
+
+
+async def test_async_count_for_fallback_warning(caplog, async_api):
+    """count_for() logs a warning when falling back to 'Count' suffix."""
+    import logging
+
+    with (
+        patch(
+            "blesta_sdk._discovery.BlestaDiscovery.suggest_pagination_pair",
+            return_value=None,
+        ),
+        patch.object(
+            async_api, "count", new_callable=AsyncMock, return_value=7
+        ) as mock_count,
+        caplog.at_level(logging.WARNING),
+    ):
+        result = await async_api.count_for("clients", "getList")
+    assert result == 7
+    mock_count.assert_called_once_with("clients", "getListCount", None)
+    assert any("falling back" in r.message for r in caplog.records)
+
+
+async def test_async_count_for_with_schema(caplog, async_api):
+    """count_for() uses schema-provided count method without warning."""
+    import logging
+
+    with (
+        patch(
+            "blesta_sdk._discovery.BlestaDiscovery.suggest_pagination_pair",
+            return_value="getListCount",
+        ),
+        patch.object(
+            async_api, "count", new_callable=AsyncMock, return_value=99
+        ) as mock_count,
+        caplog.at_level(logging.WARNING),
+    ):
+        result = await async_api.count_for("transactions", "getList")
+    assert result == 99
+    mock_count.assert_called_once_with("transactions", "getListCount", None)
+    assert not any("falling back" in r.message for r in caplog.records)
