@@ -22,12 +22,29 @@ def _json_error(message: str) -> None:
     sys.exit(1)
 
 
+def _env_truthy(name: str) -> bool:
+    """Return True when an environment variable uses a truthy value."""
+    return os.getenv(name, "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
 def cli():
     """CLI entry point for the ``blesta`` command.
 
     Reads credentials from ``BLESTA_API_URL``, ``BLESTA_API_USER``,
     and ``BLESTA_API_KEY`` environment variables. If ``python-dotenv``
     is installed, also loads ``.env`` from the current directory.
+
+    Set ``BLESTA_AUTH_METHOD`` to ``"header"`` to use ``BLESTA-API-USER``
+    / ``BLESTA-API-KEY`` header authentication instead of HTTP Basic Auth.
+    Defaults to ``"basic"``.
+
+    Set ``BLESTA_ALLOW_HTTP=1`` to permit ``http://`` base URLs (local/dev
+    only). HTTPS is enforced by default.
     """
     try:
         from dotenv import load_dotenv
@@ -72,6 +89,15 @@ def cli():
                 " Set BLESTA_API_URL, BLESTA_API_USER, and BLESTA_API_KEY."
             )
 
+        auth_method = os.getenv("BLESTA_AUTH_METHOD", "basic").strip().lower()
+        if auth_method not in ("basic", "header"):
+            _json_error(
+                f"Invalid BLESTA_AUTH_METHOD {auth_method!r}:"
+                " must be 'basic' or 'header'."
+            )
+
+        allow_http = _env_truthy("BLESTA_ALLOW_HTTP")
+
         params: dict[str, str] = {}
         for raw in args.params or []:
             if not raw or "=" not in raw:
@@ -83,7 +109,13 @@ def cli():
                 logger.warning("Duplicate CLI param '%s' — last value wins", k)
             params[k] = v
 
-        api = BlestaRequest(url, user, key)
+        api = BlestaRequest(
+            url,
+            user,
+            key,
+            auth_method=auth_method,
+            allow_http=allow_http,
+        )
         response = api.submit(args.model, args.method, params, args.action)
 
         if response.status_code == 200:
