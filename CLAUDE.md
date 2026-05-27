@@ -34,8 +34,9 @@ uv build                                   # Build package
 - `src/blesta_sdk/_validation.py` — shared URL segment validation (used by both sync and async clients)
 - `src/blesta_sdk/_dateutil.py` — internal date range utilities for time-series reports
 - `src/blesta_sdk/_cli.py` — CLI entry point (registered as `blesta` in pyproject.toml)
-- `schemas/` — bundled JSON schemas (core: 63 models, plugin: 8 models) used by `BlestaDiscovery`
-- `tools/` — schema extraction utilities (`extract_schema.py`, `extract_plugin_schema.py`, `_classify.py`)
+- `src/blesta_sdk/schemas/` — **canonical** bundled JSON schemas (core: 63 models, plugin: 8 models) used by `BlestaDiscovery`. This is the single source of truth. Do not edit the root `schemas/` copies.
+- `tools/` — schema extraction utilities (`extract_schema.py`, `extract_plugin_schema.py`, `_classify.py`). Both tools write to `src/blesta_sdk/schemas/` by default.
+- `schemas/` — **deprecated** root-level copy; will be removed once stale copies are cleaned up
 - `tests/` — unit tests (mocked) + one live integration test (`test_credentials`)
 - `benchmarks/` — performance benchmarks (pytest-benchmark, not collected in CI)
 

@@ -2572,7 +2572,7 @@ def test_to_dataframe_after_free_raw():
 @patch("blesta_sdk._client.random.random", return_value=1.0)
 @patch("blesta_sdk._client.time.sleep")
 def test_retry_mutations_no_retry_on_success(mock_sleep, _mock_random):
-    """POST with retry_mutations=True that succeeds on attempt 1 does not retry (#30)."""
+    """POST with retry_mutations=True succeeds on attempt 1, does not retry (#30)."""
     api = BlestaRequest(
         "https://test.example.com/api", "u", "k", max_retries=3, retry_mutations=True
     )
@@ -2590,21 +2590,25 @@ def test_retry_mutations_no_retry_on_success(mock_sleep, _mock_random):
 
 
 def test_call_raises_for_unknown_method(blesta_request):
-    """call() raises ValueError when method is unrecognized and no action given (#20)."""
+    """call() raises ValueError when method is unrecognized (#20)."""
     mock_disco = MagicMock()
     mock_disco.resolve_http_method.return_value = "_UNRESOLVED_"
-    with patch.object(blesta_request, "_get_discovery", return_value=mock_disco):
-        with pytest.raises(ValueError, match="could not be determined"):
-            blesta_request.call("clients", "xyzUnknownOp")
+    with (
+        patch.object(blesta_request, "_get_discovery", return_value=mock_disco),
+        pytest.raises(ValueError, match="could not be determined"),
+    ):
+        blesta_request.call("clients", "xyzUnknownOp")
 
 
 def test_call_all_raises_for_non_get_method(blesta_request):
     """call_all() raises ValueError when schema says method is POST (#18)."""
     mock_disco = MagicMock()
     mock_disco.resolve_http_method.return_value = "POST"
-    with patch.object(blesta_request, "_get_discovery", return_value=mock_disco):
-        with pytest.raises(ValueError, match="not GET"):
-            blesta_request.call_all("clients", "create")
+    with (
+        patch.object(blesta_request, "_get_discovery", return_value=mock_disco),
+        pytest.raises(ValueError, match="not GET"),
+    ):
+        blesta_request.call_all("clients", "create")
 
 
 def test_count_for_fallback_warns(blesta_request, caplog):
@@ -2613,10 +2617,12 @@ def test_count_for_fallback_warns(blesta_request, caplog):
 
     mock_disco = MagicMock()
     mock_disco.suggest_pagination_pair.return_value = None
-    with patch.object(blesta_request, "_get_discovery", return_value=mock_disco):
-        with patch.object(blesta_request, "count", return_value=5) as mock_count:
-            with caplog.at_level(logging.WARNING):
-                result = blesta_request.count_for("clients", "getList")
+    with (
+        patch.object(blesta_request, "_get_discovery", return_value=mock_disco),
+        patch.object(blesta_request, "count", return_value=5) as mock_count,
+        caplog.at_level(logging.WARNING),
+    ):
+        result = blesta_request.count_for("clients", "getList")
     assert result == 5
     mock_count.assert_called_once_with("clients", "getListCount", None)
     assert any("falling back" in r.message for r in caplog.records)
