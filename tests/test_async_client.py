@@ -951,6 +951,71 @@ async def test_async_extract_uses_semaphore(async_api):
     assert "invoices.getList" in result
 
 
+async def test_async_extract_no_semaphore_starvation():
+    """extract() semaphore is held per-request, not per-target.
+
+    With max_concurrency=1, a slow multi-page target must not block a
+    fast single-page target from making progress.  The requests from
+    both targets should interleave rather than all pages of target-1
+    completing before target-2 makes any request.
+
+    We verify interleaving by recording request call order and checking
+    that the fast target's request is NOT the very last call (i.e. it
+    was not forced to wait for all slow-target pages to finish).
+    """
+    call_log: list[str] = []
+    # Slow target: 3 pages then empty terminator
+    # Fast target: 1 page then empty terminator
+    # With starvation (old code): slow p1, slow p2, slow p3, slow empty,
+    #   fast p1, fast empty  → fast target's first request is call #5
+    # Without starvation (new code): interleaved, fast target appears early.
+
+    slow_pages = [
+        Mock(text=json.dumps({"response": [{"id": i}]}), status_code=200, headers={})
+        for i in range(1, 4)
+    ]
+    slow_pages.append(
+        Mock(text=json.dumps({"response": []}), status_code=200, headers={})
+    )
+    fast_pages = [
+        Mock(text=json.dumps({"response": [{"id": 10}]}), status_code=200, headers={}),
+        Mock(text=json.dumps({"response": []}), status_code=200, headers={}),
+    ]
+
+    slow_iter = iter(slow_pages)
+    fast_iter = iter(fast_pages)
+
+    async def fake_get(url: str, **kwargs: object) -> object:
+        if "slow" in url:
+            call_log.append("slow")
+            return next(slow_iter)
+        else:
+            call_log.append("fast")
+            return next(fast_iter)
+
+    api = AsyncBlestaRequest(
+        "https://example.com/api", "user", "key", max_concurrency=1
+    )
+    with patch.object(api.client, "get", side_effect=fake_get):
+        result = await api.extract([("slow", "getList"), ("fast", "getList")])
+
+    assert len(result["slow.getList"]) == 3
+    assert len(result["fast.getList"]) == 1
+
+    # With per-request semaphore, the fast target's request must NOT wait
+    # until all slow pages are done.  Confirm interleaving: the fast target
+    # should appear before the final slow call.
+    first_fast_idx = next(i for i, v in enumerate(call_log) if v == "fast")
+    last_slow_idx = max(i for i, v in enumerate(call_log) if v == "slow")
+    # If there were starvation, first_fast_idx > last_slow_idx (fast waits
+    # for all slow pages).  With interleaving, fast appears before some slow.
+    assert first_fast_idx < last_slow_idx, (
+        f"Semaphore starvation detected: fast target's first request (index "
+        f"{first_fast_idx}) came after all slow-target requests (last slow "
+        f"at index {last_slow_idx}). call_log={call_log}"
+    )
+
+
 # --- Repeat page detection (async) ---
 
 
