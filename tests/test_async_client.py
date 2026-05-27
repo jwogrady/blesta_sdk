@@ -636,14 +636,19 @@ async def test_async_iter_all_start_page(async_api):
     )
 
 
-async def test_async_iter_all_stops_on_falsy_data(async_api):
-    """iter_all treats falsy data (0, False) as end-of-pages."""
+async def test_async_iter_all_yields_falsy_scalar_data(async_api):
+    """iter_all yields falsy scalars (0, False) rather than treating them as empty.
+
+    Previously this test asserted result == [] which was the buggy behavior:
+    falsy scalars were silently dropped instead of being yielded (#10).
+    Non-list responses are yielded as a single item and stop pagination.
+    """
     mock_response = Mock(text=json.dumps({"response": 0}), status_code=200)
     with patch.object(
         async_api.client, "get", new_callable=AsyncMock, return_value=mock_response
     ):
         result = [item async for item in async_api.iter_all("invoices", "getList")]
-    assert result == []
+    assert result == [0]
 
 
 # --- extract() edge cases ---
