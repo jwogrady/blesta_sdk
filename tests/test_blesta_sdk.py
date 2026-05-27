@@ -45,6 +45,25 @@ def test_version():
     assert isinstance(blesta_sdk.__version__, str)
 
 
+def test_version_fallback_on_package_not_found():
+    """_get_version returns 'unknown' when the package is not installed.
+
+    Covers __init__.py lines 53-54.
+    """
+    from importlib.metadata import PackageNotFoundError
+
+    with patch(
+        "importlib.metadata.version", side_effect=PackageNotFoundError("blesta_sdk")
+    ):
+        import importlib
+
+        importlib.reload(blesta_sdk)
+        assert blesta_sdk.__version__ == "unknown"
+
+    # Restore the real version for subsequent tests
+    importlib.reload(blesta_sdk)
+
+
 # --- BlestaRequest: HTTP method dispatch ---
 
 
