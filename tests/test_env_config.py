@@ -193,3 +193,78 @@ def test_repr_shows_env_and_url(monkeypatch):
     r = repr(cfg)
     assert "stage" in r
     assert "https://stage.example.com/api" in r
+
+
+# ---------------------------------------------------------------------------
+# auth_method resolution
+# ---------------------------------------------------------------------------
+
+
+def test_auth_method_defaults_to_basic(monkeypatch):
+    monkeypatch.setenv("BLESTA_DEV_URL", "https://dev.example.com/api")
+    monkeypatch.setenv("BLESTA_DEV_USER", "u")
+    monkeypatch.setenv("BLESTA_DEV_KEY", "k")
+    monkeypatch.delenv("BLESTA_DEV_AUTH_METHOD", raising=False)
+    cfg = BlestaEnvConfig("dev")
+    assert cfg.auth_method == "basic"
+
+
+def test_auth_method_kwarg_header(monkeypatch):
+    monkeypatch.setenv("BLESTA_DEV_URL", "https://dev.example.com/api")
+    monkeypatch.setenv("BLESTA_DEV_USER", "u")
+    monkeypatch.setenv("BLESTA_DEV_KEY", "k")
+    cfg = BlestaEnvConfig("dev", auth_method="header")
+    assert cfg.auth_method == "header"
+
+
+def test_auth_method_from_env_var(monkeypatch):
+    monkeypatch.setenv("BLESTA_DEV_URL", "https://dev.example.com/api")
+    monkeypatch.setenv("BLESTA_DEV_USER", "u")
+    monkeypatch.setenv("BLESTA_DEV_KEY", "k")
+    monkeypatch.setenv("BLESTA_DEV_AUTH_METHOD", "header")
+    cfg = BlestaEnvConfig("dev")
+    assert cfg.auth_method == "header"
+
+
+def test_auth_method_kwarg_overrides_env_var(monkeypatch):
+    monkeypatch.setenv("BLESTA_DEV_URL", "https://dev.example.com/api")
+    monkeypatch.setenv("BLESTA_DEV_USER", "u")
+    monkeypatch.setenv("BLESTA_DEV_KEY", "k")
+    monkeypatch.setenv("BLESTA_DEV_AUTH_METHOD", "header")
+    cfg = BlestaEnvConfig("dev", auth_method="basic")
+    assert cfg.auth_method == "basic"
+
+
+def test_invalid_auth_method_raises(monkeypatch):
+    monkeypatch.setenv("BLESTA_DEV_URL", "https://dev.example.com/api")
+    monkeypatch.setenv("BLESTA_DEV_USER", "u")
+    monkeypatch.setenv("BLESTA_DEV_KEY", "k")
+    with pytest.raises(ValueError, match="auth_method must be one of"):
+        BlestaEnvConfig("dev", auth_method="digest")  # type: ignore[arg-type]
+
+
+def test_invalid_auth_method_from_env_var_raises(monkeypatch):
+    monkeypatch.setenv("BLESTA_DEV_URL", "https://dev.example.com/api")
+    monkeypatch.setenv("BLESTA_DEV_USER", "u")
+    monkeypatch.setenv("BLESTA_DEV_KEY", "k")
+    monkeypatch.setenv("BLESTA_DEV_AUTH_METHOD", "token")
+    with pytest.raises(ValueError, match="auth_method must be one of"):
+        BlestaEnvConfig("dev")
+
+
+def test_client_passes_auth_method_to_request(monkeypatch):
+    monkeypatch.setenv("BLESTA_DEV_URL", "https://dev.example.com/api")
+    monkeypatch.setenv("BLESTA_DEV_USER", "u")
+    monkeypatch.setenv("BLESTA_DEV_KEY", "k")
+    cfg = BlestaEnvConfig("dev", auth_method="header")
+    client = cfg.client()
+    assert client.auth_method == "header"
+
+
+def test_client_auth_method_kwarg_overrides_config(monkeypatch):
+    monkeypatch.setenv("BLESTA_DEV_URL", "https://dev.example.com/api")
+    monkeypatch.setenv("BLESTA_DEV_USER", "u")
+    monkeypatch.setenv("BLESTA_DEV_KEY", "k")
+    cfg = BlestaEnvConfig("dev", auth_method="header")
+    client = cfg.client(auth_method="basic")
+    assert client.auth_method == "basic"

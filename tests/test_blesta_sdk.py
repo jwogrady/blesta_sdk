@@ -1245,6 +1245,54 @@ def test_cli_action_case_insensitive(cli_env):
     MockApi.return_value.submit.assert_called_once_with("clients", "create", {}, "POST")
 
 
+# --- CLI auth_method tests ---
+
+
+def test_cli_auth_method_default_is_basic(cli_env):
+    """BLESTA_AUTH_METHOD unset → BlestaRequest receives auth_method='basic'."""
+    mock_response = BlestaResponse('{"response": {}}', 200)
+    with (
+        patch.dict(os.environ, {}, clear=False),
+        patch("sys.argv", ["blesta", "--model", "clients", "--method", "getList"]),
+        patch("blesta_sdk._cli.BlestaRequest") as MockApi,
+    ):
+        os.environ.pop("BLESTA_AUTH_METHOD", None)
+        MockApi.return_value.submit.return_value = mock_response
+        cli()
+
+    MockApi.assert_called_once()
+    _, kwargs = MockApi.call_args
+    assert kwargs.get("auth_method") == "basic"
+
+
+def test_cli_auth_method_header(cli_env):
+    """BLESTA_AUTH_METHOD=header → BlestaRequest receives auth_method='header'."""
+    mock_response = BlestaResponse('{"response": {}}', 200)
+    with (
+        patch.dict(os.environ, {"BLESTA_AUTH_METHOD": "header"}, clear=False),
+        patch("sys.argv", ["blesta", "--model", "clients", "--method", "getList"]),
+        patch("blesta_sdk._cli.BlestaRequest") as MockApi,
+    ):
+        MockApi.return_value.submit.return_value = mock_response
+        cli()
+
+    MockApi.assert_called_once()
+    _, kwargs = MockApi.call_args
+    assert kwargs.get("auth_method") == "header"
+
+
+def test_cli_invalid_auth_method_exits(cli_env, capsys):
+    """BLESTA_AUTH_METHOD with invalid value exits with JSON error."""
+    with (
+        patch.dict(os.environ, {"BLESTA_AUTH_METHOD": "digest"}, clear=False),
+        patch("sys.argv", ["blesta", "--model", "clients", "--method", "getList"]),
+        pytest.raises(SystemExit, match="1"),
+    ):
+        cli()
+    output = json.loads(capsys.readouterr().out)
+    assert "BLESTA_AUTH_METHOD" in output["error"]
+
+
 # --- __repr__ tests ---
 
 
