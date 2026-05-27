@@ -27,6 +27,33 @@ DEFAULT_TIMEOUT = 30
 
 _IDEMPOTENT_METHODS = frozenset({"GET", "DELETE"})
 
+_SENSITIVE_KEYS = frozenset(
+    {
+        "password",
+        "passwd",
+        "pass",
+        "token",
+        "api_key",
+        "key",
+        "secret",
+        "card_number",
+        "card",
+        "cvv",
+        "cvc",
+        "account_number",
+        "routing_number",
+    }
+)
+
+
+def _redact_args(args: dict[str, Any]) -> dict[str, Any]:
+    """Return a copy of args with sensitive values replaced by '***'.
+
+    Does not modify the original dict. Safe to call on request payloads
+    for display/logging only.
+    """
+    return {k: "***" if k.lower() in _SENSITIVE_KEYS else v for k, v in args.items()}
+
 
 class BlestaRequest:
     """HTTP client for the Blesta REST API.
@@ -224,7 +251,7 @@ class BlestaRequest:
         self._validate_segment(model, "model")
         self._validate_segment(method, "method")
         url = f"{self.base_url}{model}/{method}.json"
-        self._last_request = {"url": url, "args": args}
+        self._last_request = {"url": url, "args": args.copy()}
 
         can_retry = self.retry_mutations or action in _IDEMPOTENT_METHODS
         effective_retries = self.max_retries if can_retry else 0
@@ -605,15 +632,18 @@ class BlestaRequest:
         Uses :class:`~blesta_sdk.BlestaDiscovery` to resolve the correct
         HTTP method when *action* is ``None``. If the schema cannot
         resolve the method, falls back to a safe prefix-based heuristic
-        (e.g. ``get*`` -> GET, ``create*`` -> POST). If still ambiguous,
-        defaults to POST with a warning.
+        (e.g. ``get*`` -> GET, ``create*`` -> POST, ``delete*`` -> DELETE).
+        If the HTTP method cannot be determined from either source,
+        :exc:`ValueError` is raised — pass *action* explicitly to avoid this.
 
         :param model: API model (e.g., ``"clients"``).
         :param method: API method (e.g., ``"getList"``).
         :param args: Request parameters.
         :param action: Explicit HTTP method override. If ``None``,
-            the method is inferred from the schema.
+            the method is inferred from the schema or method name prefix.
         :return: Parsed API response.
+        :raises ValueError: When the HTTP method cannot be determined from
+            the schema or method name prefix and *action* is ``None``.
         """
         if action is None:
             from blesta_sdk._discovery import _infer_http_method
@@ -626,13 +656,10 @@ class BlestaRequest:
                 if inferred is not None:
                     action = inferred
                 else:
-                    action = "POST"
-                    logger.warning(
-                        "call(%s, %s): schema unavailable and method name "
-                        "is ambiguous; falling back to POST. Specify "
-                        "action explicitly to silence this warning.",
-                        model,
-                        method,
+                    raise ValueError(
+                        f"call({model!r}, {method!r}): HTTP method could not be"
+                        " determined from schema or method name prefix. Pass"
+                        " action= explicitly."
                     )
         return self.submit(model, method, args, action)  # type: ignore[arg-type]
 
@@ -643,17 +670,36 @@ class BlestaRequest:
         args: dict[str, Any] | None = None,
         start_page: int = 1,
     ) -> list[Any]:
-        """Paginate an API method, inferring the HTTP verb from the schema.
+        """Paginate an API method, validating via schema that it uses GET.
 
-        Convenience wrapper around :meth:`get_all` that uses schema
-        discovery to confirm the method should be called via GET.
+        Convenience wrapper around :meth:`get_all` that uses
+        :class:`~blesta_sdk.BlestaDiscovery` to confirm the method resolves
+        to GET before paginating. If the schema is unavailable, proceeds
+        with a debug log note. If the schema definitively says the method
+        is not GET (e.g., POST, PUT, DELETE), :exc:`ValueError` is raised.
 
         :param model: API model (e.g., ``"invoices"``).
         :param method: API method (e.g., ``"getList"``).
         :param args: Query parameters.
         :param start_page: Page number to start from.
         :return: List of all result items across all pages.
+        :raises ValueError: When the schema indicates the method is not GET.
         """
+        _sentinel = "_UNRESOLVED_"
+        disco = self._get_discovery()
+        http_method = disco.resolve_http_method(model, method, default=_sentinel)
+        if http_method == _sentinel:
+            logger.debug(
+                "call_all(%s, %s): schema unavailable, proceeding with GET.",
+                model,
+                method,
+            )
+        elif http_method != "GET":
+            raise ValueError(
+                f"call_all({model!r}, {method!r}): schema says HTTP method is"
+                f" {http_method!r}, not GET. Use get_all() directly or pass the"
+                " correct pagination method."
+            )
         return self.get_all(model, method, args, start_page)
 
     def count_for(
@@ -666,7 +712,8 @@ class BlestaRequest:
 
         Uses :class:`~blesta_sdk.BlestaDiscovery` to find the matching
         count method (e.g., ``"getList"`` -> ``"getListCount"``). Falls
-        back to ``list_method + "Count"`` if the schema is unavailable.
+        back to ``list_method + "Count"`` if the schema is unavailable,
+        with a warning log so callers can verify the endpoint exists.
 
         :param model: API model (e.g., ``"transactions"``).
         :param list_method: The list method to find a count for.
@@ -677,12 +724,28 @@ class BlestaRequest:
         count_method = disco.suggest_pagination_pair(model, list_method)
         if count_method is None:
             count_method = list_method + "Count"
+            logger.warning(
+                "count_for(%s, %s): no count method found in schema, "
+                "falling back to %r. Verify this endpoint exists.",
+                model,
+                list_method,
+                count_method,
+            )
         return self.count(model, count_method, args)
 
     def get_last_request(self) -> dict[str, Any] | None:
         """Return details of the last request made.
 
+        The ``"args"`` value has sensitive keys redacted (replaced with
+        ``"***"``) to prevent accidental credential leakage in logs or CLI
+        output. The actual request payload is not affected.
+
         :return: Dict with ``"url"`` and ``"args"`` keys, or ``None``
             if no requests have been made.
         """
-        return self._last_request
+        if self._last_request is None:
+            return None
+        return {
+            "url": self._last_request["url"],
+            "args": _redact_args(self._last_request["args"]),
+        }

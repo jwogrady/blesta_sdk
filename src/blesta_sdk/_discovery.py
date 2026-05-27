@@ -187,7 +187,11 @@ class BlestaDiscovery:
         :param data: Parsed schema dict with a ``"models"`` key.
         :param source: Source label (``"core"`` or ``"plugin"``).
         """
-        if self._registry is None or self._source_map is None or self._pagination_map is None:
+        if (
+            self._registry is None
+            or self._source_map is None
+            or self._pagination_map is None
+        ):
             raise RuntimeError(
                 "BlestaDiscovery: internal state not initialised — "
                 "_ingest_schema called before _registry was set up"

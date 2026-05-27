@@ -1601,3 +1601,106 @@ async def test_async_url_validation_rejects_percent_encoded(model, method):
     api = AsyncBlestaRequest("https://example.com/api", "user", "key")
     with pytest.raises(ValueError, match="percent"):
         await api.submit(model, method)
+
+
+# --- Lane 7: last_request copy semantics and redaction (#19) ---
+
+
+async def test_async_last_request_args_are_copied(async_api):
+    """Mutating args after submit does not change last_request."""
+    args = {"client_id": 1}
+    mock_response = Mock(text='{"response": {}}', status_code=200, headers={})
+    with patch.object(
+        async_api.client, "get", new_callable=AsyncMock, return_value=mock_response
+    ):
+        await async_api.get("clients", "getList", args)
+    args["client_id"] = 999  # mutate original
+    last = async_api.get_last_request()
+    assert (
+        last["args"]["client_id"] == 1
+    ), "last_request must not reflect post-call mutation"
+
+
+@pytest.mark.parametrize(
+    "sensitive_key",
+    [
+        "password",
+        "passwd",
+        "pass",
+        "token",
+        "api_key",
+        "key",
+        "secret",
+        "card_number",
+        "card",
+        "cvv",
+        "cvc",
+        "account_number",
+        "routing_number",
+    ],
+)
+async def test_async_last_request_redacts_sensitive_keys(async_api, sensitive_key):
+    """Sensitive args are redacted in get_last_request() output (#19)."""
+    args = {sensitive_key: "super-secret-value", "page": 1}
+    mock_response = Mock(text='{"response": {}}', status_code=200, headers={})
+    with patch.object(
+        async_api.client, "post", new_callable=AsyncMock, return_value=mock_response
+    ):
+        await async_api.post("clients", "create", args)
+    last = async_api.get_last_request()
+    assert last["args"][sensitive_key] == "***"
+    assert last["args"]["page"] == 1
+
+
+async def test_async_last_request_non_sensitive_keys_pass_through(async_api):
+    """Non-sensitive args are not redacted."""
+    args = {"client_id": 42, "status": "active"}
+    mock_response = Mock(text='{"response": {}}', status_code=200, headers={})
+    with patch.object(
+        async_api.client, "get", new_callable=AsyncMock, return_value=mock_response
+    ):
+        await async_api.get("clients", "getList", args)
+    last = async_api.get_last_request()
+    assert last["args"]["client_id"] == 42
+    assert last["args"]["status"] == "active"
+
+
+# --- #28: async header auth — client.auth should be None ---
+
+
+def test_async_header_auth_sets_auth_none():
+    """auth_method='header' means client.auth is None (#28)."""
+    api = AsyncBlestaRequest(
+        "https://example.com/api", "myuser", "mykey", auth_method="header"
+    )
+    assert api.client.auth is None
+    assert api.client.headers.get("BLESTA-API-USER") == "myuser"
+    assert api.client.headers.get("BLESTA-API-KEY") == "mykey"
+
+
+# --- #31: get_all_fast(verify=True) count-mismatch path logs warning ---
+
+
+async def test_get_all_fast_verify_count_mismatch_logs_warning(caplog, async_api):
+    """get_all_fast(verify=True) logs warning when count changes (#31)."""
+    import logging
+
+    count1 = Mock(text=json.dumps({"response": 25}), status_code=200)
+    page_data = [{"id": i} for i in range(25)]
+    page_resp = Mock(text=json.dumps({"response": page_data}), status_code=200)
+    count2 = Mock(text=json.dumps({"response": 30}), status_code=200)
+
+    with (
+        patch.object(
+            async_api.client,
+            "get",
+            new_callable=AsyncMock,
+            side_effect=[count1, page_resp, count2],
+        ),
+        caplog.at_level(logging.WARNING),
+    ):
+        result = await async_api.get_all_fast(
+            "clients", "getList", verify=True, page_size=25
+        )
+    assert len(result) == 25
+    assert any("count changed" in r.message for r in caplog.records)
