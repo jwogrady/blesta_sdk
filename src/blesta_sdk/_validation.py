@@ -37,3 +37,8 @@ def validate_segment(segment: str, name: str) -> None:
         raise ValueError(f"{name} cannot contain '?'")
     if "#" in segment:
         raise ValueError(f"{name} cannot contain '#'")
+    if "%" in segment:
+        raise ValueError(
+            f"{name} cannot contain percent-encoded characters "
+            "(e.g. %2F, %2e%2e, %00)"
+        )
