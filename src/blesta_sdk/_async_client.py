@@ -601,6 +601,11 @@ class AsyncBlestaRequest:
         Each target is a tuple of ``(model, method)`` or
         ``(model, method, args)``.
 
+        The semaphore is acquired **per individual HTTP request** rather
+        than per target.  This prevents a slow multi-page target from
+        holding the semaphore across its entire pagination run and
+        starving other concurrently-extracted targets.
+
         :param targets: List of extraction targets.
         :return: Dict mapping ``"model.method"`` to list of results.
         """
@@ -608,15 +613,39 @@ class AsyncBlestaRequest:
         async def _fetch(
             target: tuple[str, str] | tuple[str, str, dict[str, Any]],
         ) -> tuple[str, list[Any]]:
-            async with self._semaphore:
-                if len(target) == 3:
-                    model, method, args = target  # type: ignore[misc]
+            if len(target) == 3:
+                model, method, args = target  # type: ignore[misc]
+            else:
+                model, method = target  # type: ignore[misc]
+                args = None
+            key = f"{model}.{method}"
+            # Paginate manually so the semaphore gates each individual
+            # HTTP request rather than the entire multi-page loop.
+            base_args = args or {}
+            state = PaginationState(1, None, "warn")
+            items: list[Any] = []
+            while state.has_next_page():
+                async with self._semaphore:
+                    response = await self.get(
+                        model, method, {**base_args, "page": state.page}
+                    )
+                # Yield to the event loop after releasing the semaphore so
+                # other targets waiting on the semaphore can make progress
+                # before this target re-acquires for its next page.
+                await asyncio.sleep(0)
+                if state.check_response(response):
+                    break
+                data = response.data
+                if state.check_data(data):
+                    break
+                state.collect(data)
+                if isinstance(data, list):
+                    items.extend(data)
                 else:
-                    model, method = target  # type: ignore[misc]
-                    args = None
-                key = f"{model}.{method}"
-                data = await self.get_all(model, method, args)
-                return key, data
+                    items.append(data)
+                    break
+                state.advance()
+            return key, items
 
         pairs = await asyncio.gather(*[_fetch(t) for t in targets])
         return dict(pairs)
