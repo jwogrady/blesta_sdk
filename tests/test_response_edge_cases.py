@@ -425,3 +425,75 @@ class TestBlesta200ValidationErrors:
         assert len(errs) == 2
         assert "email" in errs
         assert "first_name" in errs
+
+
+# --- is_csv caching (#46) ---
+
+
+class TestIsCsvCaching:
+    """is_csv result is computed once and cached; subsequent accesses are free."""
+
+    CSV_BODY = "id,name,email\n1,Alice,alice@example.com\n2,Bob,bob@example.com"
+    JSON_BODY = '{"response": [{"id": 1}]}'
+
+    def test_is_csv_correct_for_csv_response(self):
+        """CSV body at status 200 must return True."""
+        r = make_response(self.CSV_BODY, 200)
+        assert r.is_csv is True
+
+    def test_is_csv_correct_for_json_response(self):
+        """JSON body must return False."""
+        r = make_response(self.JSON_BODY, 200)
+        assert r.is_csv is False
+
+    def test_is_csv_cached_across_calls(self):
+        """_compute_is_csv must be called exactly once regardless of how many
+        times is_csv is accessed."""
+        r = make_response(self.CSV_BODY, 200)
+        # Cache starts empty.
+        assert r._is_csv is None
+        # First access triggers computation and stores the result.
+        result1 = r.is_csv
+        assert r._is_csv is not None
+        assert result1 is True
+        # Patch _compute_is_csv to detect any further calls.
+        with patch.object(
+            r, "_compute_is_csv", wraps=r._compute_is_csv
+        ) as mock_compute:
+            result2 = r.is_csv
+            result3 = r.is_csv
+            mock_compute.assert_not_called()
+        assert result2 is True
+        assert result3 is True
+
+    def test_is_csv_cached_false_result(self):
+        """Cache stores False correctly — not re-evaluated on subsequent calls."""
+        r = make_response(self.JSON_BODY, 200)
+        # Prime the cache.
+        assert r.is_csv is False
+        assert r._is_csv is False
+        with patch.object(
+            r, "_compute_is_csv", wraps=r._compute_is_csv
+        ) as mock_compute:
+            assert r.is_csv is False
+            mock_compute.assert_not_called()
+
+    def test_free_raw_does_not_break_is_csv(self):
+        """is_csv must return the correct value after free_raw() clears the body."""
+        r = make_response(self.CSV_BODY, 200)
+        # Access is_csv before freeing raw — primes the cache.
+        assert r.is_csv is True
+        r.free_raw()
+        # Raw is gone, but the cached result must still be correct.
+        assert r.raw == ""
+        assert r.is_csv is True
+
+    def test_free_raw_primes_is_csv_cache(self):
+        """free_raw() primes the is_csv cache even if is_csv was never accessed."""
+        r = make_response(self.CSV_BODY, 200)
+        assert r._is_csv is None  # not yet computed
+        r.free_raw()
+        # free_raw must have populated the cache.
+        assert r._is_csv is True
+        # And is_csv still works after raw is gone.
+        assert r.is_csv is True
