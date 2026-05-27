@@ -1,6 +1,6 @@
 {
   "metadata": {
-    "extracted_at": "2026-03-02T00:51:58Z",
+    "extracted_at": "2026-05-27T18:18:06Z",
     "inference": {
       "category": {
         "description": "Inferred from method name prefix patterns",
@@ -2291,7 +2291,7 @@
               "type": "mixed"
             }
           ],
-          "return_description": "True if the list of plugins have changed / private function pluginsHaveChanged() { // Check if the list of plugins has changed since last time $installed_plugins = Cache::fetchCache( 'installed_plugins', Configure::get('Blesta.company_id') . DS . 'plugins' . DS . 'webhooks' . DS ); $current_plugins = $this->Form->collapseObjectArray( $this->PluginManager->getAll(Configure::get('Blesta.company_id')), 'name', 'dir' ); if ($installed_plugins) { $installed_plugins = (array) unserialize(base64_decode($installed_plugins)); } else { $installed_plugins = $current_plugins; } if (Configure::get('Caching.on') && is_writable(CACHEDIR)) { Cache::writeCache( 'installed_plugins', base64_encode(serialize($current_plugins)), strtotime(Configure::get('Blesta.cache_length')) - time(), Configure::get('Blesta.company_id') . DS . 'plugins' . DS . 'webhooks' . DS ); } return $current_plugins != $installed_plugins; } /** Returns a list of all methods available for a specific observer",
+          "return_description": "True if the list of plugins have changed / private function pluginsHaveChanged() { // Check if the list of plugins has changed since last time $installed_plugins = Cache::fetchCache( 'installed_plugins', Configure::get('Blesta.company_id') . DS . 'plugins' . DS . 'webhooks' . DS ); $current_plugins = $this->Form->collapseObjectArray( $this->PluginManager->getAll(Configure::get('Blesta.company_id')), 'name', 'dir' ); if ($installed_plugins) { $installed_plugins = (array) safe_unserialize(base64_decode($installed_plugins)); } else { $installed_plugins = $current_plugins; } if (Configure::get('Caching.on') && is_writable(CACHEDIR)) { Cache::writeCache( 'installed_plugins', base64_encode(serialize($current_plugins)), strtotime(Configure::get('Blesta.cache_length')) - time(), Configure::get('Blesta.company_id') . DS . 'plugins' . DS . 'webhooks' . DS ); } return $current_plugins != $installed_plugins; } /** Returns a list of all methods available for a specific observer",
           "return_type": "bool",
           "signature": "public getMethods($observer) : bool"
         },
