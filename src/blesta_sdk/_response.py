@@ -214,9 +214,24 @@ class BlestaResponse:
                 errors=self.errors(),
                 headers=self._headers,
             )
+        # Blesta can return HTTP 200 with validation errors in the body.
+        # These must not be silently treated as success.
+        errs = self.errors()
+        if errs:
+            raise BlestaAPIError(
+                "Blesta returned errors (HTTP 200)",
+                status_code=code,
+                errors=errs,
+                headers=self._headers,
+            )
 
     def errors(self) -> dict[str, Any] | None:
         """Extract error information from the response.
+
+        For HTTP 200 responses, Blesta may still return validation errors
+        in either a ``"errors"`` key (plural, Blesta validation failures)
+        or an ``"error"`` key (singular, SDK parse failures).  Both are
+        surfaced so callers can distinguish success from failure reliably.
 
         :return: Dict of errors, or ``None`` on success.
         """
@@ -229,6 +244,10 @@ class BlestaResponse:
             return formatted.get(
                 "errors", {"error": f"HTTP {self._status_code} with no error details"}
             )
+        # HTTP 200: Blesta validation failures come back as {"errors": {...}}
+        if "errors" in formatted:
+            return formatted["errors"]
+        # SDK-internal parse failure sentinel {"error": "..."}
         if "error" in formatted:
             return {"error": formatted["error"]}
         return None

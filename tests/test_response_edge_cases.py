@@ -352,3 +352,76 @@ class TestFormatResponseInvariant:
         r = make_response(body, 500)
         err = r.errors()
         assert err is not None
+
+
+# --- Blesta 200 validation error surfaces (#8, #24) ---
+
+
+class TestBlesta200ValidationErrors:
+    """HTTP 200 with Blesta error bodies must never look like success."""
+
+    def test_errors_plural_key_is_surfaced(self):
+        """200 + {"errors": {...}} must return errors, not None."""
+        r = make_response('{"errors": {"email": "Invalid email address"}}', 200)
+        errs = r.errors()
+        assert errs is not None
+        assert "email" in errs
+
+    def test_errors_plural_data_is_none(self):
+        """data is None when the body has no 'response' key."""
+        r = make_response('{"errors": {"email": "Invalid"}}', 200)
+        assert r.data is None
+
+    def test_errors_singular_internal_still_surfaced(self):
+        """200 + SDK-internal {"error": "..."} still returns errors."""
+        r = make_response('{"error": "Something went wrong"}', 200)
+        errs = r.errors()
+        assert errs is not None
+        assert "error" in errs
+
+    def test_successful_200_returns_none_errors(self):
+        """200 + {"response": [...]} must return None errors."""
+        r = make_response('{"response": [{"id": 1}]}', 200)
+        assert r.errors() is None
+        assert r.data == [{"id": 1}]
+
+    def test_malformed_json_200_surfaces_error(self):
+        """200 + malformed JSON must not silently return data=None, errors=None."""
+        r = make_response("not json at all", 200)
+        assert r.data is None
+        errs = r.errors()
+        assert errs is not None
+        assert "error" in errs
+
+    def test_raise_for_status_raises_on_200_errors_plural(self):
+        """raise_for_status() must raise for 200 + {"errors": {...}}."""
+        from blesta_sdk._exceptions import BlestaAPIError
+
+        r = make_response('{"errors": {"field": "bad"}}', 200)
+        with pytest.raises(BlestaAPIError) as exc_info:
+            r.raise_for_status()
+        assert exc_info.value.status_code == 200
+        assert exc_info.value.errors is not None
+
+    def test_raise_for_status_noop_on_clean_200(self):
+        """raise_for_status() must not raise for a clean 200 response."""
+        r = make_response('{"response": {"id": 42}}', 200)
+        r.raise_for_status()  # must not raise
+
+    def test_raise_for_status_raises_on_malformed_200(self):
+        """raise_for_status() must raise when 200 body is malformed JSON."""
+        from blesta_sdk._exceptions import BlestaAPIError
+
+        r = make_response("definitely not json", 200)
+        with pytest.raises(BlestaAPIError):
+            r.raise_for_status()
+
+    def test_errors_plural_multi_field(self):
+        """Multiple validation errors are all returned."""
+        body = '{"errors": {"email": "Invalid", "first_name": "Required"}}'
+        r = make_response(body, 200)
+        errs = r.errors()
+        assert errs is not None
+        assert len(errs) == 2
+        assert "email" in errs
+        assert "first_name" in errs
