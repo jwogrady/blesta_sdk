@@ -63,7 +63,9 @@ class BlestaEnvConfig:
         self._user = user or os.environ.get(f"{prefix}_USER") or ""
         self._key = key or os.environ.get(f"{prefix}_KEY") or ""
 
-        resolved_auth = auth_method or os.environ.get(f"{prefix}_AUTH_METHOD") or "basic"
+        resolved_auth = (
+            auth_method or os.environ.get(f"{prefix}_AUTH_METHOD") or "basic"
+        )
         if resolved_auth not in _VALID_AUTH_METHODS:
             raise ValueError(
                 f"auth_method must be one of {_VALID_AUTH_METHODS!r}, got {resolved_auth!r}"
