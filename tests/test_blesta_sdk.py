@@ -2683,3 +2683,48 @@ def test_last_request_non_sensitive_keys_pass_through(blesta_request):
     last = blesta_request.get_last_request()
     assert last["args"]["client_id"] == 42
     assert last["args"]["status"] == "active"
+
+
+# ---------------------------------------------------------------------------
+# Coverage gap tests
+# ---------------------------------------------------------------------------
+
+
+def test_validate_segment_rejects_backslash():
+    """Line 35 in _validation.py: backslash check."""
+    api = BlestaRequest("https://example.com/api", "u", "k")
+    with pytest.raises(ValueError, match="backslash"):
+        api._validate_segment("clients\\admin", "model")
+
+
+def test_get_discovery_returns_injected_instance():
+    """Line 168 in _client.py: _get_discovery() returns self._discovery when set."""
+    mock_disc = MagicMock()
+    api = BlestaRequest("https://example.com/api", "u", "k", discovery=mock_disc)
+    assert api._get_discovery() is mock_disc
+
+
+def test_to_dataframe_empty_csv_returns_empty_dataframe():
+    """Line 140 in _response.py: to_dataframe() on a CSV response with empty rows."""
+    # has comma + 2 lines so is_csv=True, but force cache to empty list
+    resp = BlestaResponse("col1,col2\nval1,val2\n", 200)
+    resp._csv_cache = []  # override so csv_data returns []
+    df = resp.to_dataframe()
+    assert len(df) == 0
+
+
+def test_pagination_state_collect_page_non_list():
+    """Line 150 in _pagination.py: collect_page() appends dict data to collected."""
+    from blesta_sdk._pagination import PaginationState
+
+    state = PaginationState(start_page=1, max_pages=None, on_error="raise")
+    state.collect({"id": 1, "name": "Foo"})
+    assert state.collected == [{"id": 1, "name": "Foo"}]
+
+
+def test_errors_csv_non_200_status():
+    """Line 240 in _response.py: errors() on a CSV response with non-200 status."""
+    resp = BlestaResponse("col1,col2\nval1,val2\n", 500)
+    errs = resp.errors()
+    assert errs is not None
+    assert "500" in str(errs)

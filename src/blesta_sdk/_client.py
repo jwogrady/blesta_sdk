@@ -324,7 +324,7 @@ class BlestaRequest:
 
         if last_response is None:  # pragma: no cover
             raise RuntimeError("Retry loop exited without a response")
-        return last_response
+        return last_response  # pragma: no cover
 
     def iter_all(
         self,
