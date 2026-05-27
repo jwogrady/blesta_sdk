@@ -1151,8 +1151,35 @@ async def test_async_post_not_retried_by_default(mock_sleep, _mock_random):
 
 @patch("blesta_sdk._async_client.random.random", return_value=1.0)
 @patch("blesta_sdk._async_client.asyncio.sleep", new_callable=AsyncMock)
-async def test_async_retry_mutations(mock_sleep, _mock_random):
-    """POST is retried when retry_mutations=True."""
+async def test_async_retry_mutations_does_not_retry_on_5xx(mock_sleep, _mock_random):
+    """POST with retry_mutations=True must NOT retry on 5xx (#12).
+
+    A 5xx does not guarantee the write never reached Blesta; retrying
+    risks duplicating billing records.
+    """
+    api = AsyncBlestaRequest(
+        "https://example.com/api",
+        "u",
+        "k",
+        max_retries=3,
+        retry_mutations=True,
+    )
+    with patch.object(
+        api.client,
+        "post",
+        new_callable=AsyncMock,
+        return_value=Mock(text="error", status_code=500),
+    ) as mock_post:
+        response = await api.post("clients", "create")
+    assert response.status_code == 500
+    assert mock_post.call_count == 1, "POST must not be retried on 5xx"
+    mock_sleep.assert_not_called()
+
+
+@patch("blesta_sdk._async_client.random.random", return_value=1.0)
+@patch("blesta_sdk._async_client.asyncio.sleep", new_callable=AsyncMock)
+async def test_async_retry_mutations_retries_on_429(mock_sleep, _mock_random):
+    """POST with retry_mutations=True DOES retry on 429 (rate-limit)."""
     api = AsyncBlestaRequest(
         "https://example.com/api",
         "u",
@@ -1161,15 +1188,14 @@ async def test_async_retry_mutations(mock_sleep, _mock_random):
         retry_mutations=True,
     )
     responses = [
-        Mock(text="error", status_code=500),
-        Mock(text='{"response": "ok"}', status_code=200),
+        Mock(text='{"error": "rate limited"}', status_code=429, headers={}),
+        Mock(text='{"response": "ok"}', status_code=200, headers={}),
     ]
     with patch.object(
         api.client, "post", new_callable=AsyncMock, side_effect=responses
     ):
         response = await api.post("clients", "create")
     assert response.status_code == 200
-    mock_sleep.assert_called_once()
 
 
 # --- get_all_fast verify ---
