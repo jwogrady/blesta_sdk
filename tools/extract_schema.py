@@ -30,7 +30,11 @@ logger = logging.getLogger(__name__)
 BASE_URL = "https://source-docs.blesta.com"
 MODELS_URL = f"{BASE_URL}/packages/blesta-app-models.html"
 DEFAULT_OUTPUT = (
-    Path(__file__).resolve().parent.parent / "schemas" / "blesta_api_schema.json"
+    Path(__file__).resolve().parent.parent
+    / "src"
+    / "blesta_sdk"
+    / "schemas"
+    / "blesta_api_schema.json"
 )
 SCHEMA_VERSION = "2.0.0"
 

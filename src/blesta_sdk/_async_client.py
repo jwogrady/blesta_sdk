@@ -17,6 +17,7 @@ from typing import Any, Literal
 
 import httpx
 
+from blesta_sdk._client import _redact_args
 from blesta_sdk._dateutil import _month_boundaries
 from blesta_sdk._pagination import PaginationState
 from blesta_sdk._response import BlestaResponse
@@ -241,7 +242,7 @@ class AsyncBlestaRequest:
         self._validate_segment(model, "model")
         self._validate_segment(method, "method")
         url = f"{self.base_url}{model}/{method}.json"
-        request_info = {"url": url, "args": args}
+        request_info = {"url": url, "args": args.copy()}
         self._last_request = request_info
         _last_request_var.set(request_info)
 
@@ -887,7 +888,17 @@ class AsyncBlestaRequest:
         branch sees only its own last request. Returns ``None`` if no
         requests have been made in the current task context.
 
+        The ``"args"`` value has sensitive keys redacted (replaced with
+        ``"***"``) to prevent accidental credential leakage in logs or CLI
+        output. The actual request payload is not affected.
+
         :return: Dict with ``"url"`` and ``"args"`` keys, or ``None``
             if no requests have been made in this context.
         """
-        return _last_request_var.get(None)
+        info = _last_request_var.get(None)
+        if info is None:
+            return None
+        return {
+            "url": info["url"],
+            "args": _redact_args(info["args"]),
+        }

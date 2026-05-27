@@ -29,7 +29,11 @@ logger = logging.getLogger(__name__)
 RAW_GITHUB_BASE = "https://raw.githubusercontent.com/blesta"
 GITHUB_BLOB_BASE = "https://github.com/blesta"
 DEFAULT_OUTPUT = (
-    Path(__file__).resolve().parent.parent / "schemas" / "blesta_plugin_schema.json"
+    Path(__file__).resolve().parent.parent
+    / "src"
+    / "blesta_sdk"
+    / "schemas"
+    / "blesta_plugin_schema.json"
 )
 SCHEMA_VERSION = "2.0.0"
 
