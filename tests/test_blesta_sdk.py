@@ -1293,6 +1293,59 @@ def test_cli_invalid_auth_method_exits(cli_env, capsys):
     assert "BLESTA_AUTH_METHOD" in output["error"]
 
 
+def test_cli_allow_http_unset_enforces_https(cli_env, capsys):
+    """http:// URL without BLESTA_ALLOW_HTTP exits with a JSON error."""
+    with (
+        patch.dict(
+            os.environ,
+            {"BLESTA_API_URL": "http://example.com/api"},
+            clear=False,
+        ),
+        patch.dict(os.environ, {}, clear=False) as env,
+        patch("sys.argv", ["blesta", "--model", "clients", "--method", "getList"]),
+        pytest.raises(SystemExit, match="1"),
+    ):
+        env.pop("BLESTA_ALLOW_HTTP", None)
+        cli()
+    output = json.loads(capsys.readouterr().out)
+    assert "HTTP" in output["error"] or "http" in output["error"].lower()
+
+
+def test_cli_allow_http_permits_http_url(cli_env):
+    """BLESTA_ALLOW_HTTP=1 allows http:// URLs."""
+    mock_response = BlestaResponse('{"response": {}}', 200)
+    with (
+        patch.dict(
+            os.environ,
+            {"BLESTA_API_URL": "http://local.example.com/api", "BLESTA_ALLOW_HTTP": "1"},
+            clear=False,
+        ),
+        patch("sys.argv", ["blesta", "--model", "clients", "--method", "getList"]),
+        patch("blesta_sdk._cli.BlestaRequest") as MockApi,
+    ):
+        MockApi.return_value.submit.return_value = mock_response
+        cli()
+
+    MockApi.assert_called_once()
+    _, kwargs = MockApi.call_args
+    assert kwargs.get("allow_http") is True
+
+
+def test_cli_allow_http_false_by_default(cli_env):
+    """BLESTA_ALLOW_HTTP unset → allow_http=False passed to BlestaRequest."""
+    mock_response = BlestaResponse('{"response": {}}', 200)
+    with (
+        patch("sys.argv", ["blesta", "--model", "clients", "--method", "getList"]),
+        patch("blesta_sdk._cli.BlestaRequest") as MockApi,
+    ):
+        os.environ.pop("BLESTA_ALLOW_HTTP", None)
+        MockApi.return_value.submit.return_value = mock_response
+        cli()
+
+    _, kwargs = MockApi.call_args
+    assert kwargs.get("allow_http") is False
+
+
 # --- __repr__ tests ---
 
 

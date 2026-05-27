@@ -32,6 +32,9 @@ def cli():
     Set ``BLESTA_AUTH_METHOD`` to ``"header"`` to use ``BLESTA-API-USER``
     / ``BLESTA-API-KEY`` header authentication instead of HTTP Basic Auth.
     Defaults to ``"basic"``.
+
+    Set ``BLESTA_ALLOW_HTTP=1`` to permit ``http://`` base URLs (local/dev
+    only). HTTPS is enforced by default.
     """
     try:
         from dotenv import load_dotenv
@@ -83,6 +86,8 @@ def cli():
                 " must be 'basic' or 'header'."
             )
 
+        allow_http = os.getenv("BLESTA_ALLOW_HTTP", "").strip() in ("1", "true", "yes")
+
         params: dict[str, str] = {}
         for raw in args.params or []:
             if not raw or "=" not in raw:
@@ -94,7 +99,7 @@ def cli():
                 logger.warning("Duplicate CLI param '%s' — last value wins", k)
             params[k] = v
 
-        api = BlestaRequest(url, user, key, auth_method=auth_method)
+        api = BlestaRequest(url, user, key, auth_method=auth_method, allow_http=allow_http)
         response = api.submit(args.model, args.method, params, args.action)
 
         if response.status_code == 200:
