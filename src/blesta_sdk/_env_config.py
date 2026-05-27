@@ -68,7 +68,8 @@ class BlestaEnvConfig:
         )
         if resolved_auth not in _VALID_AUTH_METHODS:
             raise ValueError(
-                f"auth_method must be one of {_VALID_AUTH_METHODS!r}, got {resolved_auth!r}"
+                f"auth_method must be one of {_VALID_AUTH_METHODS!r},"
+                f" got {resolved_auth!r}"
             )
         self._auth_method: _AuthMethodLiteral = resolved_auth  # type: ignore[assignment]
 
