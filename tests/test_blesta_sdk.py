@@ -2650,17 +2650,17 @@ def test_last_request_args_are_copied(blesta_request):
     [
         "password",
         "passwd",
-        "pass",
         "token",
         "api_key",
-        "key",
         "secret",
+        "private_key",
         "card_number",
-        "card",
         "cvv",
         "cvc",
         "account_number",
         "routing_number",
+        "ssn",
+        "pin",
     ],
 )
 def test_last_request_redacts_sensitive_keys(blesta_request, sensitive_key):
