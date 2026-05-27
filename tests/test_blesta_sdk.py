@@ -441,8 +441,13 @@ def test_iter_all_stops_on_none_response(blesta_request):
     assert result == []
 
 
-def test_iter_all_stops_on_falsy_data(blesta_request):
-    """iter_all treats falsy data (0, False) as end-of-pages."""
+def test_iter_all_yields_falsy_scalar_data(blesta_request):
+    """iter_all yields falsy scalars (0, False) rather than treating them as empty.
+
+    Previously this test asserted result == [] which was the buggy behavior:
+    falsy scalars were silently dropped instead of being yielded (#10).
+    Non-list responses are yielded as a single item and stop pagination.
+    """
     responses = [
         BlestaResponse(json.dumps({"response": 0}), 200),
     ]
@@ -450,7 +455,7 @@ def test_iter_all_stops_on_falsy_data(blesta_request):
     with patch.object(blesta_request, "get", side_effect=responses):
         result = list(blesta_request.iter_all("invoices", "getList"))
 
-    assert result == []
+    assert result == [0]
 
 
 def test_iter_all_forwards_args(blesta_request):
@@ -2271,6 +2276,94 @@ def test_raise_on_error_false_returns_response():
         response = api.get("clients", "getList")
     assert isinstance(response, BlestaResponse)
     assert response.status_code == 400
+
+
+# --- Pagination integrity: falsy scalar payloads (#10) ---
+
+
+@pytest.mark.parametrize(
+    "scalar",
+    [
+        0,
+        False,
+        "",
+    ],
+)
+def test_iter_all_falsy_scalar_not_dropped(blesta_request, scalar):
+    """Falsy scalars (0, False, '') must be yielded, not silently dropped.
+
+    Previously `if not data` returned True and the scalar was discarded
+    without being yielded.  Non-list responses are yielded and then stop
+    pagination (by design); the regression was the silent drop.
+    """
+    import json
+
+    responses = [
+        Mock(text=json.dumps({"response": scalar}), status_code=200),
+    ]
+    with patch.object(blesta_request.session, "get", side_effect=responses):
+        result = list(blesta_request.iter_all("clients", "getList"))
+    # The scalar must appear in the result — it was real data, not an empty page.
+    assert scalar in result, (
+        f"Falsy scalar {scalar!r} was silently dropped instead of being yielded"
+    )
+
+
+def test_iter_all_none_terminates(blesta_request):
+    """None data must terminate pagination (real empty signal)."""
+    responses = [
+        Mock(text=json.dumps({"response": None}), status_code=200),
+    ]
+    with patch.object(blesta_request.session, "get", side_effect=responses):
+        result = list(blesta_request.iter_all("clients", "getList"))
+    assert result == []
+
+
+def test_iter_all_empty_list_terminates(blesta_request):
+    """Empty list must terminate pagination."""
+    responses = [
+        Mock(text=json.dumps({"response": [{"id": 1}]}), status_code=200),
+        Mock(text=json.dumps({"response": []}), status_code=200),
+    ]
+    with patch.object(blesta_request.session, "get", side_effect=responses):
+        result = list(blesta_request.iter_all("clients", "getList"))
+    assert result == [{"id": 1}]
+
+
+def test_iter_all_empty_dict_terminates(blesta_request):
+    """Empty dict must terminate pagination."""
+    responses = [
+        Mock(text=json.dumps({"response": {}}), status_code=200),
+    ]
+    with patch.object(blesta_request.session, "get", side_effect=responses):
+        result = list(blesta_request.iter_all("clients", "getList"))
+    assert result == []
+
+
+# --- Pagination integrity: alternating stuck-page detection (#17) ---
+
+
+def test_iter_all_alternating_page_loop_detected(blesta_request):
+    """Alternating pages A→B→A→B… must be detected and aborted.
+
+    The rolling-window detector should catch this after _WINDOW_SIZE pages.
+    """
+    page_a = [{"id": 1}]
+    page_b = [{"id": 2}]
+    # 12 alternating responses — well past the 6-page window
+    responses = []
+    for i in range(12):
+        data = page_a if i % 2 == 0 else page_b
+        responses.append(Mock(text=json.dumps({"response": data}), status_code=200))
+
+    with patch.object(blesta_request.session, "get", side_effect=responses) as mock_get:
+        result = list(blesta_request.iter_all("clients", "getList"))
+        calls_made = mock_get.call_count
+
+    # Should abort after the window fills (6 pages) + 1 detection page = 7 at most
+    assert calls_made <= 7, f"Expected abort within 7 pages, got {calls_made}"
+    # Items from the aborted pages: at most 6 pages × 1 item each
+    assert len(result) <= 6
 
 
 if __name__ == "__main__":
