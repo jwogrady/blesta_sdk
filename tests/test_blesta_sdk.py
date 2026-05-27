@@ -2366,5 +2366,42 @@ def test_iter_all_alternating_page_loop_detected(blesta_request):
     assert len(result) <= 6
 
 
+# --- Lane 3: HTTP opt-in and path validation hardening (#11, #16) ---
+
+
+def test_http_base_url_raises_by_default():
+    """http:// base URL must raise ValueError without allow_http=True."""
+    with pytest.raises(ValueError, match="plaintext"):
+        BlestaRequest("http://example.com/api", "user", "key")
+
+
+def test_http_base_url_allowed_with_flag():
+    """http:// base URL is permitted when allow_http=True."""
+    api = BlestaRequest("http://example.com/api", "user", "key", allow_http=True)
+    assert api.base_url == "http://example.com/api/"
+
+
+def test_https_base_url_accepted_by_default():
+    """https:// base URL requires no special flag."""
+    api = BlestaRequest("https://example.com/api", "user", "key")
+    assert api.base_url.startswith("https://")
+
+
+@pytest.mark.parametrize(
+    "model,method",
+    [
+        ("%2Fadmin", "getList"),
+        ("clients", "%2e%2epasswd"),
+        ("%00", "getList"),
+        ("clients", "%2F%2F"),
+        ("%2f", "getList"),
+    ],
+)
+def test_url_validation_rejects_percent_encoded(blesta_request, model, method):
+    """Percent-encoded path traversal is rejected (#16)."""
+    with pytest.raises(ValueError, match="percent"):
+        blesta_request.submit(model, method)
+
+
 if __name__ == "__main__":
     pytest.main(["-v"])

@@ -1537,3 +1537,41 @@ async def test_async_raise_on_error_429_has_retry_after():
         await api.get("clients", "getList")
     assert exc_info.value.retry_after == 30
     assert exc_info.value.headers["Retry-After"] == "30"
+
+
+# --- Lane 3: HTTP opt-in and path validation hardening (#11, #16) ---
+
+
+def test_async_http_base_url_raises_by_default():
+    """http:// base URL must raise ValueError without allow_http=True."""
+    with pytest.raises(ValueError, match="plaintext"):
+        AsyncBlestaRequest("http://example.com/api", "user", "key")
+
+
+def test_async_http_base_url_allowed_with_flag():
+    """http:// base URL is permitted when allow_http=True."""
+    api = AsyncBlestaRequest("http://example.com/api", "user", "key", allow_http=True)
+    assert api.base_url == "http://example.com/api/"
+
+
+def test_async_https_base_url_accepted_by_default():
+    """https:// base URL requires no special flag."""
+    api = AsyncBlestaRequest("https://example.com/api", "user", "key")
+    assert api.base_url.startswith("https://")
+
+
+@pytest.mark.parametrize(
+    "model,method",
+    [
+        ("%2Fadmin", "getList"),
+        ("clients", "%2e%2epasswd"),
+        ("%00", "getList"),
+        ("clients", "%2F%2F"),
+        ("%2f", "getList"),
+    ],
+)
+async def test_async_url_validation_rejects_percent_encoded(model, method):
+    """Percent-encoded path traversal is rejected in async client (#16)."""
+    api = AsyncBlestaRequest("https://example.com/api", "user", "key")
+    with pytest.raises(ValueError, match="percent"):
+        await api.submit(model, method)
