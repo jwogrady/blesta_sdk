@@ -1665,6 +1665,30 @@ async def test_async_last_request_non_sensitive_keys_pass_through(async_api):
     assert last["args"]["status"] == "active"
 
 
+async def test_async_get_last_request_redacts_nested_args():
+    """Nested sensitive values are redacted; original args are not mutated."""
+    api = AsyncBlestaRequest("https://example.com/api", "u", "k")
+    args = {
+        "name": "Alice",
+        "auth": {"password": "secret"},
+        "cards": [{"card_number": "4111111111111111", "cvv": "123"}],
+    }
+    mock_response = Mock(text='{"response": {"id": 1}}', status_code=200, headers={})
+    with patch.object(
+        api.client, "post", new_callable=AsyncMock, return_value=mock_response
+    ):
+        await api.post("clients", "create", args)
+    last = api.get_last_request()
+    assert last["args"] == {
+        "name": "Alice",
+        "auth": {"password": "***"},
+        "cards": [{"card_number": "***", "cvv": "***"}],
+    }
+    # Original not mutated.
+    assert args["auth"]["password"] == "secret"
+    assert args["cards"][0]["card_number"] == "4111111111111111"
+
+
 # --- #28: async header auth — client.auth should be None ---
 
 
