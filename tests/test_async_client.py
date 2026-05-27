@@ -152,7 +152,7 @@ async def test_async_network_error(async_api):
 # --- Retry ---
 
 
-@patch("blesta_sdk._async_client.random.random", return_value=1.0)
+@patch("blesta_sdk._retry.random.random", return_value=1.0)
 @patch("blesta_sdk._async_client.asyncio.sleep", new_callable=AsyncMock)
 async def test_async_retry_on_500(mock_sleep, _mock_random):
     """Retries on 5xx, succeeds on second attempt."""
@@ -167,7 +167,7 @@ async def test_async_retry_on_500(mock_sleep, _mock_random):
     mock_sleep.assert_called_once_with(1)
 
 
-@patch("blesta_sdk._async_client.random.random", return_value=1.0)
+@patch("blesta_sdk._retry.random.random", return_value=1.0)
 @patch("blesta_sdk._async_client.asyncio.sleep", new_callable=AsyncMock)
 async def test_async_retry_exhausted(mock_sleep, _mock_random):
     """Returns last response after all retries fail."""
@@ -576,7 +576,7 @@ async def test_async_count_non_numeric(async_api):
 # --- retry edge cases ---
 
 
-@patch("blesta_sdk._async_client.random.random", return_value=1.0)
+@patch("blesta_sdk._retry.random.random", return_value=1.0)
 @patch("blesta_sdk._async_client.asyncio.sleep", new_callable=AsyncMock)
 async def test_async_retry_on_network_error(mock_sleep, _mock_random):
     """Retries on network error, succeeds on second attempt."""
@@ -1199,7 +1199,7 @@ async def test_async_get_last_request_concurrent_determinism(async_api):
 # --- Retry safety (async, idempotent-only) ---
 
 
-@patch("blesta_sdk._async_client.random.random", return_value=1.0)
+@patch("blesta_sdk._retry.random.random", return_value=1.0)
 @patch("blesta_sdk._async_client.asyncio.sleep", new_callable=AsyncMock)
 async def test_async_post_not_retried_by_default(mock_sleep, _mock_random):
     """POST is not retried when retry_mutations=False (default)."""
@@ -1214,7 +1214,7 @@ async def test_async_post_not_retried_by_default(mock_sleep, _mock_random):
     mock_sleep.assert_not_called()
 
 
-@patch("blesta_sdk._async_client.random.random", return_value=1.0)
+@patch("blesta_sdk._retry.random.random", return_value=1.0)
 @patch("blesta_sdk._async_client.asyncio.sleep", new_callable=AsyncMock)
 async def test_async_retry_mutations_does_not_retry_on_5xx(mock_sleep, _mock_random):
     """POST with retry_mutations=True must NOT retry on 5xx (#12).
@@ -1241,7 +1241,7 @@ async def test_async_retry_mutations_does_not_retry_on_5xx(mock_sleep, _mock_ran
     mock_sleep.assert_not_called()
 
 
-@patch("blesta_sdk._async_client.random.random", return_value=1.0)
+@patch("blesta_sdk._retry.random.random", return_value=1.0)
 @patch("blesta_sdk._async_client.asyncio.sleep", new_callable=AsyncMock)
 async def test_async_retry_mutations_retries_on_429(mock_sleep, _mock_random):
     """POST with retry_mutations=True DOES retry on 429 (rate-limit)."""
@@ -1489,7 +1489,7 @@ async def test_async_response_network_error_has_empty_headers(async_api):
 # --- 429 rate-limit retry ---
 
 
-@patch("blesta_sdk._async_client.random.random", return_value=1.0)
+@patch("blesta_sdk._retry.random.random", return_value=1.0)
 @patch("blesta_sdk._async_client.asyncio.sleep", new_callable=AsyncMock)
 async def test_async_retry_on_429_with_retry_after(mock_sleep, _mock_random):
     """429 with Retry-After header sleeps for the specified duration."""
@@ -1508,7 +1508,7 @@ async def test_async_retry_on_429_with_retry_after(mock_sleep, _mock_random):
     mock_sleep.assert_called_once_with(5)
 
 
-@patch("blesta_sdk._async_client.random.random", return_value=1.0)
+@patch("blesta_sdk._retry.random.random", return_value=1.0)
 @patch("blesta_sdk._async_client.asyncio.sleep", new_callable=AsyncMock)
 async def test_async_retry_on_429_without_retry_after(mock_sleep, _mock_random):
     """429 without Retry-After falls back to exponential backoff."""
@@ -1537,7 +1537,7 @@ async def test_async_no_retry_on_429_when_max_retries_zero(async_api):
     assert response.status_code == 429
 
 
-@patch("blesta_sdk._async_client.random.random", return_value=1.0)
+@patch("blesta_sdk._retry.random.random", return_value=1.0)
 @patch("blesta_sdk._async_client.asyncio.sleep", new_callable=AsyncMock)
 async def test_async_429_retry_after_headers_plumbed(mock_sleep, _mock_random):
     """Retry-After header is accessible on the final 429 response."""

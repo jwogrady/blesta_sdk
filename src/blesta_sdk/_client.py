@@ -7,7 +7,6 @@ This module is not part of the public API. Import
 from __future__ import annotations
 
 import logging
-import random
 import time
 from collections.abc import Iterator
 from typing import Any, Literal
@@ -20,6 +19,7 @@ from blesta_sdk._dateutil import _month_boundaries
 from blesta_sdk._pagination import PaginationState
 from blesta_sdk._redaction import redact_args
 from blesta_sdk._response import BlestaResponse
+from blesta_sdk._retry import jitter_delay
 from blesta_sdk._validation import validate_segment
 
 logger = logging.getLogger(__name__)
@@ -296,8 +296,7 @@ class BlestaRequest:
                     time.sleep(retry_after)
                     continue
 
-            base_delay = 2**attempt
-            time.sleep(base_delay * (0.5 + random.random() * 0.5))  # noqa: S311
+            time.sleep(jitter_delay(attempt))
 
         if last_response is None:  # pragma: no cover
             raise RuntimeError("Retry loop exited without a response")
