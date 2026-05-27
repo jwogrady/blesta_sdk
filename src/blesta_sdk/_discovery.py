@@ -191,7 +191,7 @@ class BlestaDiscovery:
             self._registry is None
             or self._source_map is None
             or self._pagination_map is None
-        ):
+        ):  # pragma: no cover
             raise RuntimeError(
                 "BlestaDiscovery: internal state not initialised — "
                 "_ingest_schema called before _registry was set up"
@@ -231,7 +231,7 @@ class BlestaDiscovery:
         :return: Sorted list of model names.
         """
         self._ensure_loaded()
-        if self._registry is None or self._source_map is None:
+        if self._registry is None or self._source_map is None:  # pragma: no cover
             raise RuntimeError(
                 "BlestaDiscovery: schema data unavailable after load attempt"
             )
@@ -248,7 +248,7 @@ class BlestaDiscovery:
         :raises KeyError: If the model is not found.
         """
         self._ensure_loaded()
-        if self._registry is None:
+        if self._registry is None:  # pragma: no cover
             raise RuntimeError(
                 "BlestaDiscovery: schema data unavailable after load attempt"
             )
@@ -267,7 +267,7 @@ class BlestaDiscovery:
         :raises KeyError: If the model or method is not found.
         """
         self._ensure_loaded()
-        if self._registry is None or self._source_map is None:
+        if self._registry is None or self._source_map is None:  # pragma: no cover
             raise RuntimeError(
                 "BlestaDiscovery: schema data unavailable after load attempt"
             )
@@ -308,7 +308,7 @@ class BlestaDiscovery:
         :return: HTTP method string (``"GET"``, ``"POST"``, etc.).
         """
         self._ensure_loaded()
-        if self._registry is None:
+        if self._registry is None:  # pragma: no cover
             raise RuntimeError(
                 "BlestaDiscovery: schema data unavailable after load attempt"
             )
@@ -333,7 +333,7 @@ class BlestaDiscovery:
         :return: The count method name, or ``None`` if no pair found.
         """
         self._ensure_loaded()
-        if self._pagination_map is None:
+        if self._pagination_map is None:  # pragma: no cover
             raise RuntimeError(
                 "BlestaDiscovery: schema data unavailable after load attempt"
             )
@@ -353,7 +353,7 @@ class BlestaDiscovery:
         :return: Report string.
         """
         self._ensure_loaded()
-        if self._registry is None or self._source_map is None:
+        if self._registry is None or self._source_map is None:  # pragma: no cover
             raise RuntimeError(
                 "BlestaDiscovery: schema data unavailable after load attempt"
             )
@@ -408,7 +408,7 @@ class BlestaDiscovery:
         :return: Number of entries written.
         """
         self._ensure_loaded()
-        if self._registry is None or self._source_map is None:
+        if self._registry is None or self._source_map is None:  # pragma: no cover
             raise RuntimeError(
                 "BlestaDiscovery: schema data unavailable after load attempt"
             )

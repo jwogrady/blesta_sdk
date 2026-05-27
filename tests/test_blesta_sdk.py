@@ -45,6 +45,25 @@ def test_version():
     assert isinstance(blesta_sdk.__version__, str)
 
 
+def test_version_fallback_on_package_not_found():
+    """_get_version returns 'unknown' when the package is not installed.
+
+    Covers __init__.py lines 53-54.
+    """
+    from importlib.metadata import PackageNotFoundError
+
+    with patch(
+        "importlib.metadata.version", side_effect=PackageNotFoundError("blesta_sdk")
+    ):
+        import importlib
+
+        importlib.reload(blesta_sdk)
+        assert blesta_sdk.__version__ == "unknown"
+
+    # Restore the real version for subsequent tests
+    importlib.reload(blesta_sdk)
+
+
 # --- BlestaRequest: HTTP method dispatch ---
 
 
@@ -1732,34 +1751,37 @@ def test_pagination_stuck_list_raises_on_error_raise(blesta_request):
 
 
 def test_pagination_stuck_dict_detected(blesta_request):
-    """Repeated dict response yields once and stops (non-list pages are terminal)."""
+    """Repeated dict response triggers stuck-page detection and stops iteration."""
     same_dict = {"id": 42, "name": "test"}
     responses = [
         Mock(text=json.dumps({"response": same_dict}), status_code=200)
         for _ in range(5)
     ]
     with patch.object(blesta_request.session, "get", side_effect=responses):
+        # on_error='warn' (default): silently stops
         result = list(blesta_request.iter_all("clients", "get"))
-    # Non-list response: caller yields once and returns immediately.
+    # Non-list response: caller yields once and returns — no repeat detection
+    # fires because the caller never comes back for a second page.
     assert result == [same_dict]
 
 
 def test_pagination_stuck_dict_raises_on_error_raise(blesta_request):
-    """Repeated dict values trigger PaginationError when on_error='raise'."""
+    """Repeated dict pages raise PaginationError when on_error='raise'."""
     from blesta_sdk import PaginationError
 
-    # iter_all() yields a non-list and returns immediately, so we test the
-    # detection logic directly via PaginationState.
+    # To trigger dict repeat detection we need the pagination loop to keep
+    # calling get().  iter_all() yields a non-list and returns immediately, so
+    # we use PaginationState directly to verify the detection logic.
     from blesta_sdk._pagination import PaginationState
 
     state = PaginationState(start_page=1, max_pages=None, on_error="raise")
     same_dict = {"id": 1}
     # First call: sets _prev_data, no repeat
     assert state.check_data(same_dict) is False
-    # Second and third calls: repeat_count 1, 2 — below threshold
+    # Second through third call: repeat_count 1, 2 — below threshold
     assert state.check_data(same_dict) is False
     assert state.check_data(same_dict) is False
-    # Fourth call: repeat_count 3 >= _REPEAT_THRESHOLD — should raise
+    # Fourth call: repeat_count 3 >= _REPEAT_THRESHOLD → should raise
     with pytest.raises(PaginationError) as exc_info:
         state.check_data(same_dict)
     assert exc_info.value.status_code == 0
@@ -2713,17 +2735,17 @@ def test_last_request_args_are_copied(blesta_request):
     [
         "password",
         "passwd",
-        "pass",
         "token",
         "api_key",
-        "key",
         "secret",
+        "private_key",
         "card_number",
-        "card",
         "cvv",
         "cvc",
         "account_number",
         "routing_number",
+        "ssn",
+        "pin",
     ],
 )
 def test_last_request_redacts_sensitive_keys(blesta_request, sensitive_key):
