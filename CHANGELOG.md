@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **Retry semantics clarified (breaking for any code relying on POST/PUT 5xx retry):** POST and PUT requests are never retried on 5xx responses, even when `retry_mutations=True`. A 5xx does not guarantee the write failed — retrying risks duplicate billing records. `retry_mutations=True` now enables retry on 429 (rate-limit) only for mutations. GET and DELETE continue to retry on both 5xx and 429.
 - `allow_http=True` is now required to use an `http://` base URL. Passing an HTTP URL without this flag raises `ValueError`. This protects credentials from being sent in plaintext by accident. **Breaking change** for any code using `http://` URLs without the flag.
+- **`generate_capabilities_report(format=...)` renamed to `output_format=`** (breaking for callers using the keyword argument). The old `format` name shadowed the Python built-in; any caller must rename the kwarg to `output_format=`.
 
 ### Fixed
 - Response correctness: Blesta returns HTTP 200 with an `errors` key for validation failures (e.g., duplicate client). `BlestaResponse.errors()` now correctly surfaces these payloads. Previously, callers checking only `status_code == 200` could miss validation errors.
@@ -22,6 +23,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Async concurrency: `AsyncBlestaRequest.extract()` and `get_all_fast()` now gate all concurrent requests through the client-level semaphore (`max_concurrency`, default 10), preventing request storms when processing large target lists.
 - CLI redaction: `get_last_request()` redacts sensitive keys from `args` before returning. Previously, raw API key values could appear in debug/log output via `--last-request`.
 - Schema tooling: `extract_schema.py` and `extract_plugin_schema.py` now write to `src/blesta_sdk/schemas/` (the canonical bundled location) instead of the deprecated root `schemas/` directory.
+
+### Documentation
+- README rewritten with repo identity ("what it is / what it does not do"), use-cases section (good fits and risky uses), sync-vs-async guidance, `allow_http` examples, HTTP 200 body-error warnings, redaction section, and migration-safety section.
+- `SDK_USAGE.md` updated with HTTP 200 body-error note and redaction documentation.
+- `BlestaEnvConfig` now documented in both README and SDK_USAGE with env-var table, isolation behavior, and client usage examples.
+- `raise_for_status()` / `raise_on_error=True` now documented to cover HTTP 200 body errors, not only HTTP error status codes.
+- Pagination section clarifies `iter_all` vs `get_all` trade-offs and stuck-page protection.
+- CLI `--last-request` output noted as redacted.
 
 ### Internal
 - Migration docs: `docs/` now includes idempotency design guidance for billing writes — ledger dedup and check-before-create patterns for safe retry in the face of server errors.
@@ -85,7 +94,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - `BlestaDiscovery` — schema-driven API discovery module. Loads bundled JSON schemas (63 core models, 8 plugin models) and exposes `list_models()`, `list_methods()`, `get_method_spec()`, `resolve_http_method()`, and `suggest_pagination_pair()`.
 - `MethodSpec` frozen dataclass returned by `get_method_spec()` with model, method, http_method, category, description, params, return_type, source, and signature fields.
-- `generate_capabilities_report(format="markdown"|"json")` for full API surface reports.
+- `generate_capabilities_report(output_format="markdown"|"json")` for full API surface reports.
 - `generate_ai_index(path)` writes JSONL index suitable for embedding pipelines.
 - `call(model, method, args=None, action=None)` on both `BlestaRequest` and `AsyncBlestaRequest` — schema-aware request that infers the HTTP method from the bundled schema. When the schema cannot resolve the method, falls back to a prefix-based heuristic (`get*` -> GET, `create*` -> POST, `edit*` -> PUT, `delete*` -> DELETE). Logs a warning and defaults to POST only when the method name is truly ambiguous.
 - `call_all(model, method, args=None, start_page=1)` — schema-aware pagination convenience wrapper.

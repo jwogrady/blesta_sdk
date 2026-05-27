@@ -1,6 +1,26 @@
 # Blesta Python SDK
 
-Python SDK and CLI for the [Blesta](https://www.blesta.com/) billing platform REST API. Provides standardized, reliable methods to extract, query, and sync data from live Blesta instances — designed for developers building integrations, data pipelines, and AI-powered solutions.
+Python SDK and CLI for the [Blesta](https://www.blesta.com/) billing platform REST API.
+
+This SDK is a **transport and helper layer** — it wraps authenticated HTTP access to Blesta
+models and methods, handles response parsing, pagination, retries, error detection, schema
+discovery, and environment configuration. It is not a full billing application, not a hosted
+service, and does not provide idempotency guarantees by itself.
+
+**What it does:**
+- Wraps Blesta REST API calls with Basic Auth or header-based authentication
+- Parses JSON and CSV responses; surfaces body-level Blesta errors (HTTP 200 can still mean failure)
+- Provides automatic pagination, batch extraction, and report helpers
+- Supports automatic retry with exponential backoff and jitter
+- Includes bundled API schema discovery (63 core models, 8 plugin models)
+- Provides environment-keyed credential management (`dev` / `stage` / `live`)
+- Redacts sensitive fields from debug/log output via `get_last_request()`
+- Ships both sync (`BlestaRequest`) and async (`AsyncBlestaRequest`) clients
+
+**What it does not do:**
+- Provide idempotency or deduplication for billing writes — that is the caller's responsibility
+- Guarantee that a failed POST means no record was created (server errors can occur after a write)
+- Operate as a hosted service, migration engine, or workflow orchestrator
 
 ## Installation
 
@@ -32,17 +52,67 @@ pip install blesta_sdk[async]
 
 ## Quickstart
 
+### Sync
+
 ```python
 from blesta_sdk import BlestaRequest
 
-api = BlestaRequest("https://your-blesta-domain.com/api", "user", "key")
+api = BlestaRequest(
+    "https://billing.example.com/api",
+    "api_user",
+    "api_key",
+    auth_method="header",
+    raise_on_error=True,
+)
 
-response = api.get("clients", "getList", {"status": "active"})
-if response.status_code == 200:
-    print(response.data)
-else:
-    print(response.errors())
+response = api.get("clients", "getList", {"page": 1})
+clients = response.data
 ```
+
+### Async
+
+```python
+import asyncio
+from blesta_sdk import AsyncBlestaRequest
+
+async def main():
+    async with AsyncBlestaRequest(
+        "https://billing.example.com/api",
+        "api_user",
+        "api_key",
+        max_concurrency=5,
+        auth_method="header",
+    ) as api:
+        clients = await api.get_all("clients", "getList")
+
+asyncio.run(main())
+```
+
+## Use Cases
+
+### Good fits
+
+| Use case | Notes |
+|---|---|
+| Admin scripts and cron jobs | Sync client; straightforward, restartable |
+| Client/invoice/service extraction | Pagination helpers handle large datasets |
+| Billing data audits and reconciliation | Read-only; no mutation risk |
+| Migration planning and dry runs | Use async for parallel read extraction |
+| Controlled Blesta-to-Blesta migrations | Pair with a ledger + check-then-create pattern |
+| Reporting (monthly revenue, tax liability) | `get_report()` / `get_report_series()` handle CSV |
+| Schema and capability inspection | `BlestaDiscovery` introspects all 71 models |
+| Read-heavy concurrent extraction | Async `get_all_fast()` / `extract()` |
+| Internal tooling around Blesta | CLI or programmatic API |
+
+### Use with caution
+
+| Use case | Risk |
+|---|---|
+| Bulk invoice / payment creation | Faster duplicates are worse than slower success; use a migration ledger |
+| Retrying billing mutations without a ledger | `retry_mutations=True` never retries 5xx, but caller-side retry without dedup creates duplicates |
+| HTTP in non-local environments | Credentials sent in plaintext; only use `allow_http=True` for local/dev |
+| Treating HTTP 200 as success | Blesta returns HTTP 200 with `errors` on validation failures — always check `response.errors()` |
+| Async concurrency for billing writes | Concurrent creates without dedup produce race conditions |
 
 ## Python API
 
@@ -95,18 +165,46 @@ response.is_csv        # True if response is CSV data
 response.csv_data      # parsed CSV rows as list of dicts, or None
 ```
 
+> **Important:** Blesta can return HTTP 200 with an `errors` key for validation failures
+> (e.g., duplicate client, missing required field). A `status_code` of 200 does **not**
+> guarantee success. Always check `response.errors()` or use `raise_on_error=True`.
+
 ### Pagination
 
-```python
-# Collect all pages into a list
-all_clients = api.get_all("clients", "getList", {"status": "active"})
+Prefer `iter_all()` for large datasets — it streams records without materializing all pages into
+memory. Use `get_all()` only when you need the full list at once.
 
-# Memory-efficient generator
+```python
+# Memory-efficient generator (recommended for large datasets)
 for client in api.iter_all("clients", "getList", {"status": "active"}):
     print(client["id"])
 
+# Page-level iterator (useful for batch DB writes)
+for page in api.iter_pages("clients", "getList"):
+    db.bulk_insert(page)
+
+# Collect all pages into a list
+# WARNING: materializes all records into memory
+all_clients = api.get_all("clients", "getList", {"status": "active"})
+
 # Schema-aware variant (equivalent to get_all)
 all_clients = api.call_all("clients", "getList")
+```
+
+Stuck-page protection prevents infinite loops: pagination aborts after 3 consecutive identical
+pages and logs a warning.
+
+#### Pagination Safety
+
+```python
+from blesta_sdk import PaginationError
+
+try:
+    for client in api.iter_all("clients", "getList", on_error="raise"):
+        process(client)
+except PaginationError as e:
+    print(f"Failed on page {e.page}: HTTP {e.status_code}")
+    print(f"Recovered {len(e.partial_items)} items before failure")
 ```
 
 ### Record Counts
@@ -199,6 +297,23 @@ api = BlestaRequest(url, user, key)
 api = BlestaRequest(url, user, key, auth_method="header")
 ```
 
+#### HTTP URLs (local / dev only)
+
+By default, `http://` base URLs raise `ValueError` to prevent credentials from being sent in
+plaintext. Use `allow_http=True` as an explicit opt-in for local development or test environments:
+
+```python
+api = BlestaRequest(
+    "http://localhost/blesta/api",
+    "api_user",
+    "api_key",
+    allow_http=True,
+)
+```
+
+> **Never use `allow_http=True` in production.** HTTP sends the API key and user in plaintext
+> on every request.
+
 ### Context Manager
 
 ```python
@@ -209,13 +324,19 @@ with BlestaRequest("https://your-blesta-domain.com/api", "user", "key") as api:
 
 ## Error Handling
 
-By default, all request methods return a `BlestaResponse` — no exceptions are raised for HTTP errors:
+By default, all request methods return a `BlestaResponse` — no exceptions are raised for HTTP
+errors or Blesta body errors:
 
 ```python
 response = api.get("clients", "get", {"client_id": 999})
 
+# Check HTTP status first
 if response.status_code != 200:
     print(f"HTTP {response.status_code}: {response.errors()}")
+
+# Always check for body-level errors even on HTTP 200
+if response.errors():
+    print(f"Blesta returned errors: {response.errors()}")
 ```
 
 Network failures return `status_code=0`, distinguishable from any real HTTP status code:
@@ -226,9 +347,13 @@ if response.status_code == 0:
     print("Network error:", response.raw)
 ```
 
+> Blesta returns HTTP 200 with an `errors` key for validation failures. A `200` response
+> does not mean success. Use `raise_on_error=True` or check `response.errors()` explicitly.
+
 ### Fail-Fast Mode
 
-For scripts that want exception-based error handling, use `raise_on_error=True`:
+For scripts that want exception-based error handling, use `raise_on_error=True`. This raises
+on HTTP errors **and** on HTTP 200 responses that contain Blesta body errors:
 
 ```python
 from blesta_sdk import BlestaRequest, BlestaAPIError
@@ -236,16 +361,16 @@ from blesta_sdk import BlestaRequest, BlestaAPIError
 api = BlestaRequest(url, user, key, raise_on_error=True)
 
 try:
-    response = api.get("clients", "getList")
-except BlestaAPIError as e:
-    print(e.status_code, e.errors)
+    response = api.post("clients", "create", payload)
+except BlestaAPIError as exc:
+    print(exc.errors)
 ```
 
 Or call `raise_for_status()` manually on any response:
 
 ```python
-response = api.get("clients", "getList")
-response.raise_for_status()  # raises on 4xx/5xx/connection errors
+response = api.post("clients", "create", payload)
+response.raise_for_status()  # raises on 4xx/5xx/connection errors AND HTTP 200 body errors
 ```
 
 Exception hierarchy:
@@ -254,7 +379,7 @@ Exception hierarchy:
 |---|---|
 | `BlestaError` | Base class for all SDK exceptions |
 | `BlestaConnectionError` | `status_code == 0` (network failure) |
-| `BlestaAPIError` | 400–499 client errors |
+| `BlestaAPIError` | 400–499 client errors, or HTTP 200 with body errors |
 | `BlestaAuthError` | 401 / 403 specifically |
 | `BlestaRateLimitError` | 429 (includes `.retry_after` seconds) |
 | `BlestaServerError` | 500–599 server errors |
@@ -384,6 +509,34 @@ async with AsyncBlestaRequest(url, user, key) as api:
 
 Constructor accepts `max_connections` and `max_keepalive_connections` (default `10`/`10`) instead of the sync `pool_connections`/`pool_maxsize`.
 
+## Sync vs Async
+
+### Use `BlestaRequest` (sync) for
+
+- CLI tools and cron jobs
+- Admin and maintenance scripts
+- Controlled billing mutations where every write is logged or checkpointed
+- Migrations with a ledger
+- Simple reporting where concurrency is not needed
+- Any context where simplicity and auditability matter more than throughput
+
+### Use `AsyncBlestaRequest` for
+
+- Read-heavy extraction across many models
+- Concurrent report fetching (monthly/yearly report series)
+- Count-first parallel pagination (`get_all_fast`)
+- Async web applications or pipeline workers
+- High-latency API reads where concurrency improves wall-clock time
+
+### Avoid async for
+
+- Uncontrolled billing writes — concurrent creates without dedup produce duplicate records
+- Migrations without a ledger — faster doesn't help if records are duplicated
+- Anything where a duplicate billing record is worse than a slow, sequential write
+
+> For billing mutations in a migration, use the sync client with check-then-create and a
+> migration ledger. Async is a tool for reading; sequential writes are safer for creating.
+
 ## Environment Configuration
 
 `BlestaEnvConfig` selects credentials for a named deployment environment (dev, stage, or live) from environment variables or constructor keyword arguments.
@@ -402,7 +555,7 @@ Constructor accepts `max_connections` and `max_keepalive_connections` (default `
 
 - Credentials for each environment are **fully isolated** — missing vars for `stage` will never fall back to `live`.
 - Raises `ValueError` immediately if any of the three required vars are absent.
-- `client()` returns a fully configured `BlestaRequest`. Any keyword arguments are forwarded to the constructor (e.g. `allow_http=True`, `retry_mutations=True`).
+- `client()` returns a fully configured `BlestaRequest`. Any keyword arguments are forwarded to the constructor (e.g. `auth_method="header"`, `raise_on_error=True`).
 
 ### Usage
 
@@ -410,7 +563,7 @@ Constructor accepts `max_connections` and `max_keepalive_connections` (default `
 from blesta_sdk import BlestaEnvConfig
 
 cfg = BlestaEnvConfig("stage")
-api = cfg.client()
+api = cfg.client(auth_method="header", raise_on_error=True)
 response = api.get("clients", "getList")
 ```
 
@@ -422,6 +575,49 @@ api = cfg.client(max_retries=3)
 ```
 
 See `.env.example` for a template covering all three environments.
+
+## Debugging and Redaction
+
+`get_last_request()` returns the URL and args of the most recent request, with sensitive
+fields automatically redacted. It is safe to log or print — the actual request payload is
+never modified:
+
+```python
+response = api.get("clients", "getList", {"status": "active"})
+last = api.get_last_request()
+print(last["url"])   # "https://example.com/api/clients/getList.json"
+print(last["args"])  # {"status": "active"}  — sensitive keys replaced with "***"
+```
+
+Redacted field examples:
+
+- Exact matches: `password`, `token`, `api_key`, `secret`, `card_number`, `cvv`, `ssn`, `pin`
+- Suffix matches: any field ending in `_key`, `_secret`, `_password`, or `_token`
+- Nested dicts and lists are redacted recursively
+
+> Redaction applies only to the debug copy returned by `get_last_request()`. The actual
+> HTTP request is sent with the original values intact.
+
+In async contexts, `get_last_request()` is per-task (via `ContextVar`), so concurrent
+tasks each see their own last request.
+
+## Migration Safety
+
+The SDK is a transport and helper layer — it does not provide idempotency or deduplication
+for billing writes. For Blesta-to-Blesta or external-to-Blesta migrations, use the following
+pattern:
+
+1. **Migration ledger** — maintain an external mapping of source IDs to target IDs
+2. **Check-then-create** — query the target before writing; skip if the record already exists
+3. **Source IDs in custom fields** — embed `source_id` so records are recoverable if the ledger is lost
+4. **Sequential writes** — use the sync client for creates; do not parallelize billing mutations
+
+Key rules:
+- Do **not** rely on `retry_mutations=True` as an idempotency mechanism. A 5xx response after a POST does not mean the write failed — Blesta may have already committed it.
+- Do **not** assume a failed POST means no record was created.
+- Do **not** run bulk creates in parallel without a distributed lock.
+
+See [`docs/migration.md`](docs/migration.md) for full patterns with code examples.
 
 ## CLI
 
@@ -453,7 +649,7 @@ blesta --model clients --method get --params client_id=1
 # Create a client via POST
 blesta --model clients --method create --action POST --params firstname=John lastname=Doe
 
-# Show the URL and parameters of the request
+# Show the URL and parameters of the request (sensitive values redacted)
 blesta --model clients --method getList --last-request
 ```
 
@@ -481,7 +677,7 @@ Output is JSON to stdout. On errors, the error dict is printed as JSON and the p
 | `get_report(report_type, start_date, end_date, extra_vars=None)` | Fetch a Blesta report (CSV) |
 | `get_report_series(report_type, start_month, end_month, extra_vars=None)` | Monthly reports as flat row list |
 | `get_report_series_pages(report_type, start_month, end_month, extra_vars=None)` | Monthly reports as generator |
-| `get_last_request()` | Last request URL and args, or `None` |
+| `get_last_request()` | Last request URL and args (sensitive fields redacted), or `None` |
 | `close()` | Close the HTTP session |
 
 Supports context manager (`with BlestaRequest(...) as api:`).
@@ -496,6 +692,8 @@ Same methods as `BlestaRequest`, all `async`. Additional async-specific methods:
 | `get_report_series_concurrent(report_type, start_month, end_month, extra_vars=None, max_concurrency=None)` | Concurrent monthly report fetching |
 
 `extract()` runs targets concurrently via `asyncio.gather()`. `iter_all()` is an async generator (`async for`). Supports `async with` context manager.
+
+In concurrent contexts, `get_last_request()` returns the last request for the current asyncio task only.
 
 ### `BlestaEnvConfig(env, *, url=None, user=None, key=None)`
 
@@ -526,7 +724,7 @@ Raises `ValueError` if `env` is not recognized, or if any credential cannot be r
 | `get_method_spec(model, method)` | Get full `MethodSpec` dataclass for a method |
 | `resolve_http_method(model, method, default="POST")` | Resolve HTTP method from schema |
 | `suggest_pagination_pair(model, list_method="getList")` | Find the count method for a list method |
-| `generate_capabilities_report(output_format="markdown")` | Generate API capabilities report |
+| `generate_capabilities_report(output_format="markdown")` | Generate API capabilities report (`"markdown"` or `"json"`) |
 | `generate_ai_index(path)` | Write JSONL index for AI embeddings |
 
 ### `BlestaResponse`
@@ -537,13 +735,25 @@ Raises `ValueError` if `env` is not recognized, or if any credential cannot be r
 | `data` | `Any \| None` | Parsed `"response"` field from JSON body |
 | `raw` | `str \| None` | Raw response body text |
 | `headers` | `Mapping[str, str]` | HTTP response headers |
-| `errors()` | `dict \| None` | Error dict if present, otherwise `None` |
+| `errors()` | `dict \| None` | Error dict if present (including HTTP 200 body errors), otherwise `None` |
 | `is_json` | `bool` | `True` if response is valid JSON |
 | `is_csv` | `bool` | `True` if response is CSV data |
 | `csv_data` | `list[dict] \| None` | Parsed CSV rows, or `None` |
 | `to_dataframe()` | `DataFrame` | Convert to pandas DataFrame (requires pandas) |
-| `raise_for_status()` | `None` | Raise typed exception on error; no-op for 1xx–3xx |
+| `raise_for_status()` | `None` | Raise typed exception on error or HTTP 200 body errors; no-op for clean 1xx–3xx |
 | `free_raw()` | `None` | Release raw text to save memory (caches preserved) |
+
+### Exceptions
+
+| Exception | Trigger |
+|---|---|
+| `BlestaError` | Base class |
+| `BlestaConnectionError` | `status_code == 0` |
+| `BlestaAPIError` | 400–499, or HTTP 200 with body errors |
+| `BlestaAuthError` | 401 / 403 |
+| `BlestaRateLimitError` | 429 (`.retry_after` attribute) |
+| `BlestaServerError` | 500–599 |
+| `PaginationError` | Pagination failure with `on_error="raise"` (`.page`, `.status_code`, `.partial_items`) |
 
 ### `__version__`
 
