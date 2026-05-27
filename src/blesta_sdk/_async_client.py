@@ -112,8 +112,9 @@ class AsyncBlestaRequest:
         self.retry_mutations = retry_mutations
         self.auth_method = auth_method
         self.raise_on_error = raise_on_error
+        if max_concurrency is not None and max_concurrency < 1:
+            raise ValueError("max_concurrency must be >= 1")
         self._discovery = discovery
-        self._last_request: dict[str, Any] | None = None
         self._semaphore = asyncio.Semaphore(max_concurrency)
         auth = None if auth_method == "header" else httpx.BasicAuth(self.user, self.key)
         headers = {}
@@ -243,7 +244,6 @@ class AsyncBlestaRequest:
         self._validate_segment(method, "method")
         url = f"{self.base_url}{model}/{method}.json"
         request_info = {"url": url, "args": args.copy()}
-        self._last_request = request_info
         _last_request_var.set(request_info)
 
         can_retry = self.retry_mutations or action in _IDEMPOTENT_METHODS
@@ -845,17 +845,36 @@ class AsyncBlestaRequest:
         args: dict[str, Any] | None = None,
         start_page: int = 1,
     ) -> list[Any]:
-        """Paginate an API method, inferring the HTTP verb from the schema.
+        """Paginate an API method, validating via schema that it uses GET.
 
-        Convenience wrapper around :meth:`get_all` that uses schema
-        discovery to confirm the method should be called via GET.
+        Convenience wrapper around :meth:`get_all` that uses
+        :class:`~blesta_sdk.BlestaDiscovery` to confirm the method resolves
+        to GET before paginating. If the schema is unavailable, proceeds
+        with a debug log note. If the schema definitively says the method
+        is not GET (e.g., POST, PUT, DELETE), :exc:`ValueError` is raised.
 
         :param model: API model (e.g., ``"invoices"``).
         :param method: API method (e.g., ``"getList"``).
         :param args: Query parameters.
         :param start_page: Page number to start from.
         :return: List of all result items across all pages.
+        :raises ValueError: When the schema indicates the method is not GET.
         """
+        _sentinel = "_UNRESOLVED_"
+        disco = self._get_discovery()
+        http_method = disco.resolve_http_method(model, method, default=_sentinel)
+        if http_method == _sentinel:
+            logger.debug(
+                "call_all(%s, %s): schema unavailable, proceeding with GET.",
+                model,
+                method,
+            )
+        elif http_method != "GET":
+            raise ValueError(
+                f"call_all({model!r}, {method!r}): schema says HTTP method is"
+                f" {http_method!r}, not GET. Use get_all() directly or pass the"
+                " correct pagination method."
+            )
         return await self.get_all(model, method, args, start_page)
 
     async def count_for(
@@ -868,7 +887,8 @@ class AsyncBlestaRequest:
 
         Uses :class:`~blesta_sdk.BlestaDiscovery` to find the matching
         count method (e.g., ``"getList"`` -> ``"getListCount"``). Falls
-        back to ``list_method + "Count"`` if the schema is unavailable.
+        back to ``list_method + "Count"`` if the schema is unavailable,
+        with a warning log so callers can verify the endpoint exists.
 
         :param model: API model (e.g., ``"transactions"``).
         :param list_method: The list method to find a count for.
@@ -879,6 +899,13 @@ class AsyncBlestaRequest:
         count_method = disco.suggest_pagination_pair(model, list_method)
         if count_method is None:
             count_method = list_method + "Count"
+            logger.warning(
+                "count_for(%s, %s): no count method found in schema, "
+                "falling back to %r. Verify this endpoint exists.",
+                model,
+                list_method,
+                count_method,
+            )
         return await self.count(model, count_method, args)
 
     def get_last_request(self) -> dict[str, Any] | None:
