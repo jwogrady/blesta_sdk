@@ -1394,7 +1394,7 @@ def test_submit_no_retry_by_default(blesta_request):
     assert mock_get.call_count == 1
 
 
-@patch("blesta_sdk._client.random.random", return_value=1.0)
+@patch("blesta_sdk._retry.random.random", return_value=1.0)
 @patch("blesta_sdk._client.time.sleep")
 def test_submit_retry_on_network_error(mock_sleep, _mock_random):
     api = BlestaRequest("https://test.example.com/api", "u", "k", max_retries=2)
@@ -1410,7 +1410,7 @@ def test_submit_retry_on_network_error(mock_sleep, _mock_random):
     mock_sleep.assert_called_once_with(1)
 
 
-@patch("blesta_sdk._client.random.random", return_value=1.0)
+@patch("blesta_sdk._retry.random.random", return_value=1.0)
 @patch("blesta_sdk._client.time.sleep")
 def test_submit_retry_on_500(mock_sleep, _mock_random):
     api = BlestaRequest("https://test.example.com/api", "u", "k", max_retries=2)
@@ -1438,7 +1438,7 @@ def test_submit_no_retry_on_4xx(mock_sleep):
     mock_sleep.assert_not_called()
 
 
-@patch("blesta_sdk._client.random.random", return_value=1.0)
+@patch("blesta_sdk._retry.random.random", return_value=1.0)
 @patch("blesta_sdk._client.time.sleep")
 def test_submit_retry_exhausted(mock_sleep, _mock_random):
     api = BlestaRequest("https://test.example.com/api", "u", "k", max_retries=2)
@@ -1451,7 +1451,7 @@ def test_submit_retry_exhausted(mock_sleep, _mock_random):
     assert mock_sleep.call_count == 2
 
 
-@patch("blesta_sdk._client.random.random", return_value=1.0)
+@patch("blesta_sdk._retry.random.random", return_value=1.0)
 @patch("blesta_sdk._client.time.sleep")
 def test_submit_retry_backoff_timing(mock_sleep, _mock_random):
     api = BlestaRequest(
@@ -2022,7 +2022,7 @@ def test_iter_all_raise_accumulates_partial_items(blesta_request):
 # --- Retry safety (idempotent-only) ---
 
 
-@patch("blesta_sdk._client.random.random", return_value=1.0)
+@patch("blesta_sdk._retry.random.random", return_value=1.0)
 @patch("blesta_sdk._client.time.sleep")
 def test_post_not_retried_by_default(mock_sleep, _mock_random):
     """POST is not retried when retry_mutations=False (default)."""
@@ -2035,7 +2035,7 @@ def test_post_not_retried_by_default(mock_sleep, _mock_random):
     mock_sleep.assert_not_called()
 
 
-@patch("blesta_sdk._client.random.random", return_value=1.0)
+@patch("blesta_sdk._retry.random.random", return_value=1.0)
 @patch("blesta_sdk._client.time.sleep")
 def test_put_not_retried_by_default(mock_sleep, _mock_random):
     """PUT is not retried when retry_mutations=False (default)."""
@@ -2048,7 +2048,7 @@ def test_put_not_retried_by_default(mock_sleep, _mock_random):
     mock_sleep.assert_not_called()
 
 
-@patch("blesta_sdk._client.random.random", return_value=1.0)
+@patch("blesta_sdk._retry.random.random", return_value=1.0)
 @patch("blesta_sdk._client.time.sleep")
 def test_retry_mutations_does_not_retry_post_on_5xx(mock_sleep, _mock_random):
     """POST with retry_mutations=True must NOT retry on 5xx (#12).
@@ -2071,7 +2071,7 @@ def test_retry_mutations_does_not_retry_post_on_5xx(mock_sleep, _mock_random):
     mock_sleep.assert_not_called()
 
 
-@patch("blesta_sdk._client.random.random", return_value=1.0)
+@patch("blesta_sdk._retry.random.random", return_value=1.0)
 @patch("blesta_sdk._client.time.sleep")
 def test_retry_mutations_does_not_retry_put_on_5xx(mock_sleep, _mock_random):
     """PUT with retry_mutations=True must NOT retry on 5xx (#12)."""
@@ -2090,7 +2090,7 @@ def test_retry_mutations_does_not_retry_put_on_5xx(mock_sleep, _mock_random):
     mock_sleep.assert_not_called()
 
 
-@patch("blesta_sdk._client.random.random", return_value=1.0)
+@patch("blesta_sdk._retry.random.random", return_value=1.0)
 @patch("blesta_sdk._client.time.sleep")
 def test_retry_mutations_retries_post_on_429(mock_sleep, _mock_random):
     """POST with retry_mutations=True DOES retry on 429 (rate-limit)."""
@@ -2111,7 +2111,7 @@ def test_retry_mutations_retries_post_on_429(mock_sleep, _mock_random):
     assert mock_post.call_count == 2
 
 
-@patch("blesta_sdk._client.random.random", return_value=1.0)
+@patch("blesta_sdk._retry.random.random", return_value=1.0)
 @patch("blesta_sdk._client.time.sleep")
 def test_get_retry_on_5xx_unchanged(mock_sleep, _mock_random):
     """GET retry on 5xx behavior is unchanged (#12)."""
@@ -2131,7 +2131,7 @@ def test_get_retry_on_5xx_unchanged(mock_sleep, _mock_random):
     assert mock_get.call_count == 2
 
 
-@patch("blesta_sdk._client.random.random", return_value=0.0)
+@patch("blesta_sdk._retry.random.random", return_value=0.0)
 @patch("blesta_sdk._client.time.sleep")
 def test_jitter_applies_half_minimum(mock_sleep, _mock_random):
     """With random()=0, sleep is base_delay * 0.5 (minimum jitter)."""
@@ -2347,7 +2347,7 @@ def test_response_headers_default_empty():
 # --- 429 rate-limit retry ---
 
 
-@patch("blesta_sdk._client.random.random", return_value=1.0)
+@patch("blesta_sdk._retry.random.random", return_value=1.0)
 @patch("blesta_sdk._client.time.sleep")
 def test_submit_retry_on_429_with_retry_after(mock_sleep, _mock_random):
     """429 with Retry-After header sleeps for the specified duration."""
@@ -2368,7 +2368,7 @@ def test_submit_retry_on_429_with_retry_after(mock_sleep, _mock_random):
     mock_sleep.assert_called_once_with(5)
 
 
-@patch("blesta_sdk._client.random.random", return_value=1.0)
+@patch("blesta_sdk._retry.random.random", return_value=1.0)
 @patch("blesta_sdk._client.time.sleep")
 def test_submit_retry_on_429_without_retry_after(mock_sleep, _mock_random):
     """429 without Retry-After falls back to exponential backoff."""
@@ -2399,7 +2399,7 @@ def test_submit_no_retry_on_429_when_max_retries_zero(blesta_request):
     assert mock_get.call_count == 1
 
 
-@patch("blesta_sdk._client.random.random", return_value=1.0)
+@patch("blesta_sdk._retry.random.random", return_value=1.0)
 @patch("blesta_sdk._client.time.sleep")
 def test_submit_429_retry_after_headers_plumbed(mock_sleep, _mock_random):
     """Retry-After header is accessible on the final 429 response."""
@@ -2676,7 +2676,7 @@ def test_200_empty_errors_dict_data_is_none():
 # --- #25: Non-integer Retry-After header ---
 
 
-@patch("blesta_sdk._client.random.random", return_value=1.0)
+@patch("blesta_sdk._retry.random.random", return_value=1.0)
 @patch("blesta_sdk._client.time.sleep")
 def test_retry_after_float_does_not_crash(mock_sleep, _mock_random):
     """Non-integer Retry-After header (e.g. float) does not crash (#25)."""
@@ -2694,7 +2694,7 @@ def test_retry_after_float_does_not_crash(mock_sleep, _mock_random):
     assert response.status_code == 200
 
 
-@patch("blesta_sdk._client.random.random", return_value=1.0)
+@patch("blesta_sdk._retry.random.random", return_value=1.0)
 @patch("blesta_sdk._client.time.sleep")
 def test_retry_after_http_date_does_not_crash(mock_sleep, _mock_random):
     """HTTP-date Retry-After header does not crash (#25)."""
@@ -2759,7 +2759,7 @@ def test_to_dataframe_after_free_raw():
 # --- #30: retry_mutations=True with successful first POST must NOT retry ---
 
 
-@patch("blesta_sdk._client.random.random", return_value=1.0)
+@patch("blesta_sdk._retry.random.random", return_value=1.0)
 @patch("blesta_sdk._client.time.sleep")
 def test_retry_mutations_no_retry_on_success(mock_sleep, _mock_random):
     """POST with retry_mutations=True succeeds on attempt 1, does not retry (#30)."""

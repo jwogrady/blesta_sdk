@@ -11,7 +11,6 @@ from __future__ import annotations
 import asyncio
 import contextvars
 import logging
-import random
 from collections.abc import AsyncIterator
 from typing import Any, Literal
 
@@ -21,6 +20,7 @@ from blesta_sdk._dateutil import _month_boundaries
 from blesta_sdk._pagination import PaginationState
 from blesta_sdk._redaction import redact_args
 from blesta_sdk._response import BlestaResponse
+from blesta_sdk._retry import jitter_delay
 from blesta_sdk._validation import validate_segment
 
 logger = logging.getLogger(__name__)
@@ -315,10 +315,7 @@ class AsyncBlestaRequest:
                     await asyncio.sleep(retry_after)
                     continue
 
-            base_delay = 2**attempt
-            await asyncio.sleep(
-                base_delay * (0.5 + random.random() * 0.5)  # noqa: S311
-            )
+            await asyncio.sleep(jitter_delay(attempt))
 
         if last_response is None:  # pragma: no cover
             raise RuntimeError("Retry loop exited without a response")
