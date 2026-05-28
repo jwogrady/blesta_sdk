@@ -1919,7 +1919,7 @@ def test_async_import_error_when_httpx_missing():
     import sys
 
     # Simulate httpx being absent by patching the import inside __init__
-    with patch.dict(sys.modules, {"blesta_sdk._async_client": None}):
+    with patch.dict(sys.modules, {"blesta_sdk.core.async_client": None}):
         # Force re-evaluation of the lazy __getattr__
         import importlib
 
