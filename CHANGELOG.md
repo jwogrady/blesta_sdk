@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **MCP tool error handling** — API-calling tools (`blesta_call`, `blesta_get_all`,
+  `blesta_extract`, `blesta_count`, `blesta_get_report`, `blesta_get_report_series`) now
+  catch all exceptions (including `RuntimeError` from missing credentials) and return a
+  structured `{"ok": false, "error": "..."}` JSON response instead of raising an unhandled
+  exception that would surface as a raw Python traceback in MCP clients.
+- **`blesta-mcp` startup error** — when the `mcp` package is not installed, `blesta-mcp`
+  now prints a single-line user-friendly error message to stderr and exits with code 1,
+  instead of showing a confusing chained Python traceback.
+
+### Changed
+
+- **`blesta_call` tool description** updated to explicitly note that passing
+  `action="POST"`, `"PUT"`, or `"DELETE"` performs a mutation and that mutations are
+  **not idempotent** — the caller is responsible for deduplication.
+- **MCP prompt templates** — all 5 prompts now include a write-safety ``Note:`` section.
+  Previously only `blesta_reconcile_invoices` had a write-safety note; the other four
+  (`blesta_audit_client`, `blesta_plan_migration`, `blesta_extract_customer_snapshot`,
+  `blesta_map_to_prime_account`) now state they are read-only by default and that the
+  SDK does not provide idempotency for billing writes.
+- `blesta_sdk.mcp.prompts` module docstring updated to document the read-only default
+  and the requirement to confirm mutations with the user.
+
 ## [0.8.0] - 2026-05-27
 
 ### Added
