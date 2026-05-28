@@ -59,15 +59,74 @@ def test_print_error_exits(capsys):
 
 
 # ---------------------------------------------------------------------------
-# blesta call
+# _build_cli_client helper
 # ---------------------------------------------------------------------------
-
 
 _CREDS = {
     "BLESTA_API_URL": "https://example.com/api",
     "BLESTA_API_USER": "user",
     "BLESTA_API_KEY": "key",
 }
+
+
+def test_build_cli_client_returns_blesta_request():
+    from blesta_sdk.cli.formatters import _build_cli_client
+    from blesta_sdk.core.client import BlestaRequest
+
+    with patch.dict(os.environ, _CREDS):
+        client = _build_cli_client()
+    assert isinstance(client, BlestaRequest)
+
+
+def test_build_cli_client_missing_creds(capsys):
+    from blesta_sdk.cli.formatters import _build_cli_client
+
+    with (
+        patch.dict(os.environ, {}, clear=True),
+        pytest.raises(SystemExit),
+    ):
+        _build_cli_client()
+    out = capsys.readouterr().out
+    assert "BLESTA_API_URL" in out
+
+
+def test_build_cli_client_invalid_auth_method(capsys):
+    from blesta_sdk.cli.formatters import _build_cli_client
+
+    creds = {**_CREDS, "BLESTA_AUTH_METHOD": "digest"}
+    with (
+        patch.dict(os.environ, creds),
+        pytest.raises(SystemExit),
+    ):
+        _build_cli_client()
+    out = capsys.readouterr().out
+    assert "BLESTA_AUTH_METHOD" in out
+
+
+def test_build_cli_client_allow_http():
+    from blesta_sdk.cli.formatters import _build_cli_client
+    from blesta_sdk.core.client import BlestaRequest
+
+    creds = {**_CREDS, "BLESTA_ALLOW_HTTP": "true"}
+    with patch.dict(os.environ, creds):
+        client = _build_cli_client()
+    assert isinstance(client, BlestaRequest)
+
+
+def test_build_cli_client_header_auth():
+    from blesta_sdk.cli.formatters import _build_cli_client
+    from blesta_sdk.core.client import BlestaRequest
+
+    creds = {**_CREDS, "BLESTA_AUTH_METHOD": "header"}
+    with patch.dict(os.environ, creds):
+        client = _build_cli_client()
+    assert isinstance(client, BlestaRequest)
+    assert client.auth_method == "header"
+
+
+# ---------------------------------------------------------------------------
+# blesta call
+# ---------------------------------------------------------------------------
 
 
 def _mock_response(data=None, status_code=200):
@@ -85,9 +144,9 @@ def test_call_run_get(capsys):
     mock_resp = _mock_response(data=[{"id": 1}])
     with (
         patch.dict(os.environ, _CREDS),
-        patch("blesta_sdk.cli.commands.call.BlestaRequest") as MockApi,
+        patch("blesta_sdk.cli.commands.call._build_cli_client") as MockBuild,
     ):
-        MockApi.return_value.submit.return_value = mock_resp
+        MockBuild.return_value.submit.return_value = mock_resp
         args = _build_parser().parse_args(
             [
                 "call",
@@ -112,9 +171,9 @@ def test_call_run_inferred_method(capsys):
     mock_resp = _mock_response(data={"id": 5})
     with (
         patch.dict(os.environ, _CREDS),
-        patch("blesta_sdk.cli.commands.call.BlestaRequest") as MockApi,
+        patch("blesta_sdk.cli.commands.call._build_cli_client") as MockBuild,
     ):
-        MockApi.return_value.call.return_value = mock_resp
+        MockBuild.return_value.call.return_value = mock_resp
         args = _build_parser().parse_args(["call", "clients", "getList"])
         call.run(args)
 
@@ -141,9 +200,9 @@ def test_call_run_non200(capsys):
     mock_resp = _mock_response(status_code=403)
     with (
         patch.dict(os.environ, _CREDS),
-        patch("blesta_sdk.cli.commands.call.BlestaRequest") as MockApi,
+        patch("blesta_sdk.cli.commands.call._build_cli_client") as MockBuild,
     ):
-        MockApi.return_value.submit.return_value = mock_resp
+        MockBuild.return_value.submit.return_value = mock_resp
         args = _build_parser().parse_args(
             ["call", "clients", "getList", "--action", "GET"]
         )
@@ -180,9 +239,9 @@ def test_extract_run_json(capsys):
     rows = [{"id": 1}, {"id": 2}]
     with (
         patch.dict(os.environ, _CREDS),
-        patch("blesta_sdk.cli.commands.extract.BlestaRequest") as MockApi,
+        patch("blesta_sdk.cli.commands.extract._build_cli_client") as MockBuild,
     ):
-        MockApi.return_value.get_all.return_value = rows
+        MockBuild.return_value.get_all.return_value = rows
         args = _build_parser().parse_args(["extract", "clients", "getList"])
         extract.run(args)
 
@@ -198,9 +257,9 @@ def test_extract_run_jsonl(capsys):
     rows = [{"id": 1}, {"id": 2}]
     with (
         patch.dict(os.environ, _CREDS),
-        patch("blesta_sdk.cli.commands.extract.BlestaRequest") as MockApi,
+        patch("blesta_sdk.cli.commands.extract._build_cli_client") as MockBuild,
     ):
-        MockApi.return_value.get_all.return_value = rows
+        MockBuild.return_value.get_all.return_value = rows
         args = _build_parser().parse_args(
             ["extract", "clients", "getList", "--format", "jsonl"]
         )
@@ -217,9 +276,9 @@ def test_extract_run_csv(capsys):
     rows = [{"name": "Alice"}, {"name": "Bob"}]
     with (
         patch.dict(os.environ, _CREDS),
-        patch("blesta_sdk.cli.commands.extract.BlestaRequest") as MockApi,
+        patch("blesta_sdk.cli.commands.extract._build_cli_client") as MockBuild,
     ):
-        MockApi.return_value.get_all.return_value = rows
+        MockBuild.return_value.get_all.return_value = rows
         args = _build_parser().parse_args(
             ["extract", "clients", "getList", "--format", "csv"]
         )
@@ -258,9 +317,9 @@ def test_report_run_csv_response(capsys):
 
     with (
         patch.dict(os.environ, _CREDS),
-        patch("blesta_sdk.cli.commands.report.BlestaRequest") as MockApi,
+        patch("blesta_sdk.cli.commands.report._build_cli_client") as MockBuild,
     ):
-        MockApi.return_value.get_report.return_value = mock_resp
+        MockBuild.return_value.get_report.return_value = mock_resp
         args = _build_parser().parse_args(
             [
                 "report",
@@ -289,9 +348,9 @@ def test_report_run_json_response(capsys):
 
     with (
         patch.dict(os.environ, _CREDS),
-        patch("blesta_sdk.cli.commands.report.BlestaRequest") as MockApi,
+        patch("blesta_sdk.cli.commands.report._build_cli_client") as MockBuild,
     ):
-        MockApi.return_value.get_report.return_value = mock_resp
+        MockBuild.return_value.get_report.return_value = mock_resp
         args = _build_parser().parse_args(
             [
                 "report",
@@ -318,10 +377,10 @@ def test_report_run_error_response():
 
     with (
         patch.dict(os.environ, _CREDS),
-        patch("blesta_sdk.cli.commands.report.BlestaRequest") as MockApi,
+        patch("blesta_sdk.cli.commands.report._build_cli_client") as MockBuild,
         pytest.raises(SystemExit),
     ):
-        MockApi.return_value.get_report.return_value = mock_resp
+        MockBuild.return_value.get_report.return_value = mock_resp
         args = _build_parser().parse_args(
             [
                 "report",
@@ -433,12 +492,12 @@ def test_app_main_legacy_mode(capsys):
     mock_resp = _mock_response(data={"id": 1})
     with (
         patch.dict(os.environ, _CREDS),
-        patch("blesta_sdk.cli.app.BlestaRequest") as MockApi,
+        patch("blesta_sdk.cli.app._build_cli_client") as MockBuild,
         patch.object(
             sys, "argv", ["blesta", "--model", "clients", "--method", "getList"]
         ),
     ):
-        MockApi.return_value.submit.return_value = mock_resp
+        MockBuild.return_value.submit.return_value = mock_resp
         main()
 
     out = capsys.readouterr().out
@@ -518,7 +577,7 @@ def test_app_legacy_non200_exits_1(capsys):
     mock_resp.errors.return_value = {"error": "not found"}
     with (
         patch.dict(os.environ, _CREDS),
-        patch("blesta_sdk.cli.app.BlestaRequest") as MockApi,
+        patch("blesta_sdk.cli.app._build_cli_client") as MockBuild,
         patch.object(
             sys,
             "argv",
@@ -526,7 +585,7 @@ def test_app_legacy_non200_exits_1(capsys):
         ),
         pytest.raises(SystemExit) as exc_info,
     ):
-        MockApi.return_value.submit.return_value = mock_resp
+        MockBuild.return_value.submit.return_value = mock_resp
         main()
     assert exc_info.value.code == 1
 
@@ -540,15 +599,15 @@ def test_app_legacy_last_request(capsys):
     last_req = {"url": "https://example.com/api/clients/getList.json", "args": {}}
     with (
         patch.dict(os.environ, _CREDS),
-        patch("blesta_sdk.cli.app.BlestaRequest") as MockApi,
+        patch("blesta_sdk.cli.app._build_cli_client") as MockBuild,
         patch.object(
             sys,
             "argv",
             ["blesta", "--model", "clients", "--method", "getList", "--last-request"],
         ),
     ):
-        MockApi.return_value.submit.return_value = mock_resp
-        MockApi.return_value.get_last_request.return_value = last_req
+        MockBuild.return_value.submit.return_value = mock_resp
+        MockBuild.return_value.get_last_request.return_value = last_req
         main()
 
     out = capsys.readouterr().out
@@ -562,9 +621,9 @@ def test_call_run_duplicate_param(capsys):
     mock_resp = _mock_response(data=[])
     with (
         patch.dict(os.environ, _CREDS),
-        patch("blesta_sdk.cli.commands.call.BlestaRequest") as MockApi,
+        patch("blesta_sdk.cli.commands.call._build_cli_client") as MockBuild,
     ):
-        MockApi.return_value.submit.return_value = mock_resp
+        MockBuild.return_value.submit.return_value = mock_resp
         args = _build_parser().parse_args(
             [
                 "call",
@@ -589,10 +648,10 @@ def test_extract_missing_creds_param():
 
     with (
         patch.dict(os.environ, _CREDS),
-        patch("blesta_sdk.cli.commands.extract.BlestaRequest") as MockApi,
+        patch("blesta_sdk.cli.commands.extract._build_cli_client") as MockBuild,
         pytest.raises(SystemExit),
     ):
-        MockApi.return_value.get_all.return_value = []
+        MockBuild.return_value.get_all.return_value = []
         args = _build_parser().parse_args(
             ["extract", "clients", "getList", "--param", "badparam"]
         )
@@ -606,9 +665,9 @@ def test_extract_run_csv_non_dict(capsys):
     rows = [1, 2, 3]
     with (
         patch.dict(os.environ, _CREDS),
-        patch("blesta_sdk.cli.commands.extract.BlestaRequest") as MockApi,
+        patch("blesta_sdk.cli.commands.extract._build_cli_client") as MockBuild,
     ):
-        MockApi.return_value.get_all.return_value = rows
+        MockBuild.return_value.get_all.return_value = rows
         args = _build_parser().parse_args(
             ["extract", "clients", "getList", "--format", "csv"]
         )
@@ -629,9 +688,9 @@ def test_report_run_with_extra_params(capsys):
 
     with (
         patch.dict(os.environ, _CREDS),
-        patch("blesta_sdk.cli.commands.report.BlestaRequest") as MockApi,
+        patch("blesta_sdk.cli.commands.report._build_cli_client") as MockBuild,
     ):
-        MockApi.return_value.get_report.return_value = mock_resp
+        MockBuild.return_value.get_report.return_value = mock_resp
         args = _build_parser().parse_args(
             [
                 "report",
@@ -646,7 +705,7 @@ def test_report_run_with_extra_params(capsys):
         )
         report.run(args)
 
-    _, kwargs = MockApi.return_value.get_report.call_args
+    _, kwargs = MockBuild.return_value.get_report.call_args
     assert kwargs.get("extra_vars") == {"currency": "USD"} or (
-        MockApi.return_value.get_report.call_args[0][-1] == {"currency": "USD"}
+        MockBuild.return_value.get_report.call_args[0][-1] == {"currency": "USD"}
     )
