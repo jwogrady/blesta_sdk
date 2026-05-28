@@ -2940,3 +2940,101 @@ def test_errors_csv_non_200_status():
     errs = resp.errors()
     assert errs is not None
     assert "500" in str(errs)
+
+
+# ---------------------------------------------------------------------------
+# New namespace import tests (Issue #71)
+# ---------------------------------------------------------------------------
+
+
+class TestCoreNamespaceImports:
+    """Verify that the new blesta_sdk.core namespace imports work."""
+
+    def test_core_client_import(self):
+        from blesta_sdk.core.client import BlestaRequest as BR
+
+        assert BR is BlestaRequest
+
+    def test_core_response_import(self):
+        from blesta_sdk.core.response import BlestaResponse as BRsp
+
+        assert BRsp is BlestaResponse
+
+    def test_core_errors_import(self):
+        from blesta_sdk.core.errors import BlestaError as BE
+
+        from blesta_sdk import BlestaError
+
+        assert BE is BlestaError
+
+    def test_core_config_import(self):
+        from blesta_sdk.core.config import BlestaEnvConfig as BEC
+
+        from blesta_sdk import BlestaEnvConfig
+
+        assert BEC is BlestaEnvConfig
+
+    def test_core_pagination_import(self):
+        from blesta_sdk.core.pagination import PaginationState
+
+        assert PaginationState is not None
+
+    def test_core_redaction_import(self):
+        from blesta_sdk.core.redaction import redact_args
+
+        assert callable(redact_args)
+
+    def test_core_validation_import(self):
+        from blesta_sdk.core.validation import validate_segment
+
+        assert callable(validate_segment)
+
+    def test_core_dateutil_import(self):
+        from blesta_sdk.core.dateutil import _month_boundaries
+
+        assert callable(_month_boundaries)
+
+    def test_core_retry_import(self):
+        from blesta_sdk.core.retry import jitter_delay
+
+        assert callable(jitter_delay)
+
+    def test_discovery_registry_import(self):
+        from blesta_sdk.discovery.registry import BlestaDiscovery as BD
+
+        assert BD is BlestaDiscovery
+
+    def test_discovery_methodspec_import(self):
+        from blesta_sdk import MethodSpec
+        from blesta_sdk.discovery.registry import MethodSpec as MS
+
+        assert MS is MethodSpec
+
+    def test_compat_shim_client(self):
+        from blesta_sdk._client import BlestaRequest as BR
+
+        assert BR is BlestaRequest
+
+    def test_compat_shim_discovery(self):
+        from blesta_sdk._discovery import BlestaDiscovery as BD
+
+        assert BD is BlestaDiscovery
+
+    def test_compat_shim_exceptions(self):
+        from blesta_sdk._exceptions import BlestaError as BE
+
+        from blesta_sdk import BlestaError
+
+        assert BE is BlestaError
+
+    def test_compat_shim_response(self):
+        from blesta_sdk._response import BlestaResponse as BRsp
+
+        assert BRsp is BlestaResponse
+
+    def test_compat_shim_env_config(self):
+        from blesta_sdk._env_config import BlestaEnvConfig as BEC
+
+        from blesta_sdk import BlestaEnvConfig
+
+        assert BEC is BlestaEnvConfig
