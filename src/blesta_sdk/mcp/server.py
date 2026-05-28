@@ -78,10 +78,9 @@ def main() -> None:
 
     Starts the MCP server over stdio transport (the default for local
     AI-agent integrations).
-
-    :raises ImportError: If ``mcp`` is not installed.
-    :raises RuntimeError: If Blesta credentials are not configured.
     """
+    import sys
+
     try:
         from dotenv import load_dotenv
 
@@ -89,7 +88,12 @@ def main() -> None:
     except ImportError:
         pass
 
-    mcp_server = _build_server()
+    try:
+        mcp_server = _build_server()
+    except ImportError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+
     logger.info("Starting %s MCP server v%s", _SERVER_NAME, _SERVER_VERSION)
     mcp_server.run()
 

@@ -3,6 +3,12 @@
 Prompts help AI agents understand how to use the Blesta SDK tools
 for common workflows such as auditing clients, planning migrations,
 or reconciling invoices.
+
+All prompts are read-only by default.  The MCP server is a transport and
+helper layer — it does not provide idempotency for billing writes.  If a
+workflow requires creating or modifying records, confirm the action with
+the user before calling ``blesta_call`` with ``action="POST"`` or
+``action="PUT"``.
 """
 
 from __future__ import annotations
@@ -31,6 +37,9 @@ You are auditing a Blesta client record. Use the following tools in order:
    → Fetch active services.
 
 Summarise the client's account status, outstanding balance, and service list.
+
+Note: This workflow is read-only. Do not modify records unless the user
+explicitly requests it and you have confirmed the intended change.
 """
 
 PLAN_MIGRATION_PROMPT = """\
@@ -45,6 +54,11 @@ For each model:
 - Estimate record counts with blesta_count().
 
 Produce a migration plan that lists models in dependency order.
+
+Note: This is a planning workflow only. The SDK does not provide idempotency
+for billing writes. Any migration that creates records must use a ledger
+(source_id → target_id mapping) and a check-before-create pattern to avoid
+duplicates. Do not execute writes without a confirmed deduplication strategy.
 """
 
 RECONCILE_INVOICES_PROMPT = """\
@@ -58,12 +72,12 @@ You are reconciling Blesta invoices against payment records.
 
 Report any invoices that lack matching transactions.
 
-Note: This SDK is read-only in this context. Do not attempt to create or
-modify records unless explicitly authorised.
+Note: This workflow is read-only. Do not attempt to create or modify records
+unless explicitly authorised by the user.
 """
 
 EXTRACT_CUSTOMER_SNAPSHOT_PROMPT = """\
-Extract a complete snapshot of a Blesta customer for export.
+Extract a complete snapshot of a Blesta customer for export or analysis.
 
 Use blesta_extract with these targets:
 - ["Clients", "getList"]
@@ -73,6 +87,10 @@ Use blesta_extract with these targets:
 
 Then use blesta_capabilities_report() to understand what other models
 might contain relevant customer data.
+
+Note: This workflow is read-only. The extracted data is for analysis or
+export only. Do not write back to Blesta without explicit user confirmation
+and a deduplication strategy.
 """
 
 MAP_TO_PRIME_ACCOUNT_PROMPT = """\
@@ -86,6 +104,10 @@ You are mapping Blesta client records to a target billing system.
 
 Note: Field names visible in API responses may differ from schema param names.
 Always verify with a live sample.
+
+This is a mapping and planning workflow only. The SDK does not provide
+idempotency for billing writes. Any import into the target system must use
+a ledger and check-before-create pattern to prevent duplicate records.
 """
 
 # ---------------------------------------------------------------------------

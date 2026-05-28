@@ -31,21 +31,30 @@ def _call_handler(
 ) -> str:
     """Invoke a single Blesta API method.
 
+    HTTP method is inferred from the bundled schema when *action* is omitted.
+    Pass ``action="POST"``, ``"PUT"``, or ``"DELETE"`` explicitly for mutating
+    operations.  Mutations are **not idempotent** — the caller is responsible
+    for deduplication and ledger tracking.
+
     :param model: API model name (e.g. ``"Clients"``).
     :param method: API method name (e.g. ``"getList"``).
     :param params: JSON string of request parameters.
     :param action: HTTP method override (GET/POST/PUT/DELETE).
     :return: JSON-serialised response data.
     """
-    args: dict[str, Any] = json.loads(params) if params else {}
-    client = _build_client()
-    if action:
-        response = client.submit(model, method, args, action.upper())
-    else:
-        response = client.call(model, method, args)
-    if response.status_code == 200:
-        return json.dumps({"ok": True, "data": response.data})
-    return json.dumps({"ok": False, "errors": response.errors()})
+    try:
+        args: dict[str, Any] = json.loads(params) if params else {}
+        client = _build_client()
+        if action:
+            response = client.submit(model, method, args, action.upper())
+        else:
+            response = client.call(model, method, args)
+        if response.status_code == 200:
+            return json.dumps({"ok": True, "data": response.data})
+        return json.dumps({"ok": False, "errors": response.errors()})
+    except Exception as exc:
+        logger.debug("_call_handler error: %s", exc)
+        return json.dumps({"ok": False, "error": str(exc)})
 
 
 def _get_all_handler(
@@ -62,10 +71,14 @@ def _get_all_handler(
     :param max_pages: Optional page limit.
     :return: JSON-serialised list of all records.
     """
-    args: dict[str, Any] = json.loads(params) if params else {}
-    client = _build_client()
-    rows = client.get_all(model, method, args or None, max_pages=max_pages)
-    return json.dumps({"ok": True, "count": len(rows), "data": rows})
+    try:
+        args: dict[str, Any] = json.loads(params) if params else {}
+        client = _build_client()
+        rows = client.get_all(model, method, args or None, max_pages=max_pages)
+        return json.dumps({"ok": True, "count": len(rows), "data": rows})
+    except Exception as exc:
+        logger.debug("_get_all_handler error: %s", exc)
+        return json.dumps({"ok": False, "error": str(exc)})
 
 
 def _extract_handler(
@@ -77,10 +90,14 @@ def _extract_handler(
         tuples.
     :return: JSON-serialised dict mapping ``model.method`` to record lists.
     """
-    target_list = json.loads(targets)
-    client = _build_client()
-    results = client.extract([tuple(t) for t in target_list])  # type: ignore[arg-type]
-    return json.dumps({"ok": True, "data": results})
+    try:
+        target_list = json.loads(targets)
+        client = _build_client()
+        results = client.extract([tuple(t) for t in target_list])  # type: ignore[arg-type]
+        return json.dumps({"ok": True, "data": results})
+    except Exception as exc:
+        logger.debug("_extract_handler error: %s", exc)
+        return json.dumps({"ok": False, "error": str(exc)})
 
 
 def _count_handler(
@@ -95,10 +112,14 @@ def _count_handler(
     :param params: JSON string of request parameters.
     :return: JSON-serialised count.
     """
-    args: dict[str, Any] = json.loads(params) if params else {}
-    client = _build_client()
-    count = client.count(model, method, args or None)
-    return json.dumps({"ok": True, "count": count})
+    try:
+        args: dict[str, Any] = json.loads(params) if params else {}
+        client = _build_client()
+        count = client.count(model, method, args or None)
+        return json.dumps({"ok": True, "count": count})
+    except Exception as exc:
+        logger.debug("_count_handler error: %s", exc)
+        return json.dumps({"ok": False, "error": str(exc)})
 
 
 def _get_report_handler(
@@ -115,14 +136,18 @@ def _get_report_handler(
     :param extra_vars: JSON string of additional vars[] parameters.
     :return: JSON-serialised report rows (CSV parsed) or raw data.
     """
-    extra: dict[str, str] = json.loads(extra_vars) if extra_vars else {}
-    client = _build_client()
-    response = client.get_report(report_type, start_date, end_date, extra or None)
-    if response.status_code != 200:
-        return json.dumps({"ok": False, "error": f"HTTP {response.status_code}"})
-    if response.is_csv:
-        return json.dumps({"ok": True, "data": response.csv_data or []})
-    return json.dumps({"ok": True, "data": response.data})
+    try:
+        extra: dict[str, str] = json.loads(extra_vars) if extra_vars else {}
+        client = _build_client()
+        response = client.get_report(report_type, start_date, end_date, extra or None)
+        if response.status_code != 200:
+            return json.dumps({"ok": False, "error": f"HTTP {response.status_code}"})
+        if response.is_csv:
+            return json.dumps({"ok": True, "data": response.csv_data or []})
+        return json.dumps({"ok": True, "data": response.data})
+    except Exception as exc:
+        logger.debug("_get_report_handler error: %s", exc)
+        return json.dumps({"ok": False, "error": str(exc)})
 
 
 def _get_report_series_handler(
@@ -139,10 +164,16 @@ def _get_report_series_handler(
     :param extra_vars: JSON string of additional vars[] parameters.
     :return: JSON-serialised list of row dicts with ``_period`` key.
     """
-    extra: dict[str, str] = json.loads(extra_vars) if extra_vars else {}
-    client = _build_client()
-    rows = client.get_report_series(report_type, start_month, end_month, extra or None)
-    return json.dumps({"ok": True, "count": len(rows), "data": rows})
+    try:
+        extra: dict[str, str] = json.loads(extra_vars) if extra_vars else {}
+        client = _build_client()
+        rows = client.get_report_series(
+            report_type, start_month, end_month, extra or None
+        )
+        return json.dumps({"ok": True, "count": len(rows), "data": rows})
+    except Exception as exc:
+        logger.debug("_get_report_series_handler error: %s", exc)
+        return json.dumps({"ok": False, "error": str(exc)})
 
 
 def _list_models_handler(source: str | None = None) -> str:
@@ -227,7 +258,12 @@ TOOL_REGISTRY: list[tuple[str, Any, str]] = [
     (
         "blesta_call",
         _call_handler,
-        "Invoke a single Blesta API method. Returns JSON response data.",
+        (
+            "Invoke a single Blesta API method. HTTP method is inferred from the "
+            "schema when action is omitted. For mutations (POST/PUT/DELETE), pass "
+            "action explicitly. Mutations are not idempotent — the caller is "
+            "responsible for deduplication."
+        ),
     ),
     (
         "blesta_get_all",
