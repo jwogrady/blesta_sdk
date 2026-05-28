@@ -272,7 +272,7 @@ for period, response in api.get_report_series_pages("tax_liability", "2024-01", 
 
 ### DataFrame Conversion
 
-Requires pandas (`pip install pandas` or `uv add pandas`).
+Requires pandas. Install with `pip install "blesta_sdk[data]"` or install pandas directly (`pip install pandas`).
 
 ```python
 response = api.get_report("package_revenue", "2025-01-01", "2025-01-31")

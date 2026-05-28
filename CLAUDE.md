@@ -35,33 +35,36 @@ uv run python tools/extract_plugin_schema.py                    # Re-extract plu
 ## Project Structure
 
 - `src/blesta_sdk/__init__.py` — public API exports (`__all__`), lazy import for `AsyncBlestaRequest`
-- `src/blesta_sdk/_client.py` — `BlestaRequest`: sync HTTP client (GET/POST/PUT/DELETE, `submit()`, `call()`, `call_all()`, `count_for()`, pagination, reports, batch extraction)
-- `src/blesta_sdk/_async_client.py` — `AsyncBlestaRequest`: async HTTP client (mirrors sync API, adds `get_all_fast()` and `get_report_series_concurrent()`)
-- `src/blesta_sdk/_response.py` — `BlestaResponse`: response parsing, CSV/JSON detection, error extraction, `raise_for_status()`, DataFrame conversion
-- `src/blesta_sdk/_pagination.py` — `PaginationState`: shared pagination logic with stuck-page and alternating-loop cycle detection; used by both sync and async clients
-- `src/blesta_sdk/_redaction.py` — `redact_args()`: shared sensitive-key scrubber used by both clients for `get_last_request()` output
-- `src/blesta_sdk/_discovery.py` — `BlestaDiscovery` and `MethodSpec`: schema-driven API introspection (lazy-loaded)
-- `src/blesta_sdk/_exceptions.py` — typed exception hierarchy: `BlestaError`, `BlestaConnectionError`, `BlestaAPIError`, `BlestaAuthError`, `BlestaRateLimitError` (`.retry_after`), `BlestaServerError`, `PaginationError`
-- `src/blesta_sdk/_env_config.py` — `BlestaEnvConfig`: environment-keyed credential resolution (`dev`/`stage`/`live`) with no cross-env fallback
-- `src/blesta_sdk/_validation.py` — shared URL segment validation used by both clients
-- `src/blesta_sdk/_dateutil.py` — `_month_boundaries()` for time-series report date ranges
-- `src/blesta_sdk/_cli.py` — CLI entry point (registered as `blesta` in pyproject.toml)
-- `src/blesta_sdk/schemas/` — **canonical** bundled JSON schemas (core: 63 models, plugin: 8 models) used by `BlestaDiscovery`. Do not edit the deprecated root-level `schemas/` copies.
+- `src/blesta_sdk/core/client.py` — `BlestaRequest`: sync HTTP client (GET/POST/PUT/DELETE, `submit()`, `call()`, `call_all()`, `count_for()`, pagination, reports, batch extraction)
+- `src/blesta_sdk/core/async_client.py` — `AsyncBlestaRequest`: async HTTP client (mirrors sync API, adds `get_all_fast()` and `get_report_series_concurrent()`)
+- `src/blesta_sdk/core/response.py` — `BlestaResponse`: response parsing, CSV/JSON detection, error extraction, `raise_for_status()`, DataFrame conversion
+- `src/blesta_sdk/core/pagination.py` — `PaginationState`: shared pagination logic with stuck-page and alternating-loop cycle detection; used by both sync and async clients
+- `src/blesta_sdk/core/redaction.py` — `redact_args()`: shared sensitive-key scrubber used by both clients for `get_last_request()` output
+- `src/blesta_sdk/discovery/registry.py` — `BlestaDiscovery` and `MethodSpec`: schema-driven API introspection (lazy-loaded)
+- `src/blesta_sdk/core/errors.py` — typed exception hierarchy: `BlestaError`, `BlestaConnectionError`, `BlestaAPIError`, `BlestaAuthError`, `BlestaRateLimitError` (`.retry_after`), `BlestaServerError`, `PaginationError`
+- `src/blesta_sdk/core/config.py` — `BlestaEnvConfig`: environment-keyed credential resolution (`dev`/`stage`/`live`) with no cross-env fallback
+- `src/blesta_sdk/core/validation.py` — shared URL segment validation used by both clients
+- `src/blesta_sdk/core/dateutil.py` — `_month_boundaries()` for time-series report date ranges
+- `src/blesta_sdk/cli/app.py` — CLI entry point (registered as `blesta` in pyproject.toml via `blesta_sdk.cli.app:main`)
+- `src/blesta_sdk/cli/commands/` — CLI subcommands: `call.py`, `extract.py`, `report.py`, `discover.py`
+- `src/blesta_sdk/mcp/server.py` — MCP server entry point (registered as `blesta-mcp` via `blesta_sdk.mcp.server:main`)
+- `src/blesta_sdk/mcp/tools.py`, `resources.py`, `prompts.py` — MCP tool/resource/prompt registrations
+- `src/blesta_sdk/schemas/` — **canonical** bundled JSON schemas (core: 63 models, plugin: 8 models) used by `BlestaDiscovery`
 - `tools/` — schema extraction utilities (`extract_schema.py`, `extract_plugin_schema.py`, `_classify.py`); write to `src/blesta_sdk/schemas/` by default
 - `tests/` — unit tests (mocked) + one live integration test (`test_credentials`)
 - `benchmarks/` — performance benchmarks (pytest-benchmark, not collected in CI)
 
 ## Architecture: Cross-Cutting Patterns
 
-**All requests return `BlestaResponse`** — never raw dicts or `False`. Network errors produce `status_code=0`. Callers check `response.ok`, `response.data`, or call `response.raise_for_status()` to get typed exceptions.
+**All requests return `BlestaResponse`** — never raw dicts or `False`. Network errors produce `status_code=0`. Callers check `response.data`, `response.errors()`, or call `response.raise_for_status()` to get typed exceptions.
 
-**HTTP 200 ≠ success** — Blesta returns HTTP 200 with an `errors` key for validation failures. Always check `response.errors` or `response.ok`, not just the status code.
+**HTTP 200 ≠ success** — Blesta returns HTTP 200 with an `errors` key for validation failures. Always check `response.errors()` or use `raise_on_error=True`, not just the status code.
 
-**Pagination** is handled by `PaginationState` (shared between `_client.py` and `_async_client.py`). It detects stuck pages (3 consecutive identical pages) and alternating loops, raising `PaginationError` rather than looping forever.
+**Pagination** is handled by `PaginationState` (shared between `core/client.py` and `core/async_client.py`). It detects stuck pages (3 consecutive identical pages) and alternating loops, raising `PaginationError` rather than looping forever.
 
 **Retry logic** in both clients respects the `Retry-After` response header on 429s. If the header is present and non-zero, the client sleeps for that many seconds instead of using exponential backoff.
 
-**`get_last_request()`** returns a redacted copy of the last request's args (sensitive keys replaced with `"***"` by `redact_args()` in `_redaction.py`). The actual HTTP request is never modified. In async context, this is per-asyncio-task via `ContextVar`.
+**`get_last_request()`** returns a redacted copy of the last request's args (sensitive keys replaced with `"***"` by `redact_args()` in `core/redaction.py`). The actual HTTP request is never modified. In async context, this is per-asyncio-task via `ContextVar`.
 
 **Schema-aware calls** (`call()`, `call_all()`, `count_for()`) use bundled schemas to infer the correct HTTP method from the model/method name, falling back to prefix heuristics (`get*` → GET, `add*`/`create*` → POST, etc.).
 
@@ -110,7 +113,7 @@ BLESTA_API_USER=your_api_user
 BLESTA_API_KEY=your_api_key
 ```
 
-The `--last-request` CLI flag returns a redacted args dict (sensitive values shown as `"***"`). The programmatic API takes credentials as constructor arguments directly.
+The `--last-request` flag (legacy mode only) returns a redacted args dict (sensitive values shown as `"***"`). The programmatic API takes credentials as constructor arguments directly.
 
 ## CI/CD
 

@@ -201,6 +201,7 @@ def test_call_run_non200(capsys):
     with (
         patch.dict(os.environ, _CREDS),
         patch("blesta_sdk.cli.commands.call._build_cli_client") as MockBuild,
+        pytest.raises(SystemExit) as exc_info,
     ):
         MockBuild.return_value.submit.return_value = mock_resp
         args = _build_parser().parse_args(
@@ -208,6 +209,7 @@ def test_call_run_non200(capsys):
         )
         call.run(args)
 
+    assert exc_info.value.code == 1
     out = capsys.readouterr().out
     data = json.loads(out)
     assert "error" in data
