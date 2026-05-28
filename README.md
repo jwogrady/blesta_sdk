@@ -50,6 +50,12 @@ For async support:
 pip install blesta_sdk[async]
 ```
 
+For pandas/DataFrame support:
+
+```bash
+pip install "blesta_sdk[data]"
+```
+
 For the MCP server (Python 3.10+):
 
 ```bash
