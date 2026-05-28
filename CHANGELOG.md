@@ -7,6 +7,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-05-27
+
+### Added
+
+- **`blesta_sdk.core` namespace** — canonical sub-package for core SDK classes. All public
+  names remain importable from the top-level `blesta_sdk` package (backward-compatible).
+  New canonical paths: `blesta_sdk.core.client.BlestaRequest`,
+  `blesta_sdk.core.async_client.AsyncBlestaRequest`,
+  `blesta_sdk.core.config.BlestaEnvConfig`,
+  `blesta_sdk.core.response.BlestaResponse`,
+  `blesta_sdk.core.errors.*`, `blesta_sdk.core.pagination.PaginationState`.
+- **`blesta_sdk.discovery` namespace** — canonical sub-package for schema discovery.
+  `blesta_sdk.discovery.registry` is now the canonical home for `BlestaDiscovery` and
+  `MethodSpec` (previously `blesta_sdk._discovery`).
+- **`blesta_sdk.cli` namespace** — CLI refactored into a sub-package with argparse
+  subcommands: `call`, `extract`, `report`, and `discover`. The legacy
+  `--model/--method` form remains fully supported. New `blesta_sdk.cli.commands`
+  package contains individual command modules; `blesta_sdk.cli.formatters` provides
+  JSON, JSONL, and CSV output helpers.
+- **`blesta_sdk.mcp` namespace** — new MCP (Model Context Protocol) server surface.
+  Requires `pip install blesta_sdk[mcp]` and Python 3.10+. Exposes the full Blesta
+  API as 10 tools, 7 resources, and 5 prompt templates via FastMCP.
+  - **Tools:** `blesta_call`, `blesta_get_all`, `blesta_extract`, `blesta_count`,
+    `blesta_get_report`, `blesta_get_report_series`, `blesta_list_models`,
+    `blesta_list_methods`, `blesta_get_method_spec`, `blesta_capabilities_report`.
+  - **Resources:** `blesta://schema/core`, `blesta://schema/plugin`,
+    `blesta://models`, `blesta://models/{model}`,
+    `blesta://models/{model}/methods/{method}`,
+    `blesta://capabilities/markdown`, `blesta://capabilities/json`.
+  - **Prompts:** `blesta_audit_client`, `blesta_plan_migration`,
+    `blesta_reconcile_invoices`, `blesta_extract_customer_snapshot`,
+    `blesta_map_to_prime_account`.
+- **`blesta-mcp` console script** — starts the MCP server over stdio for use with
+  Claude Code, Claude Desktop, and other MCP-compatible AI tools.
+- **`mcp` optional extra** — `pip install blesta_sdk[mcp]` installs `mcp>=1.0` (Python
+  3.10+ only).
+- `BLESTA_AUTH_METHOD` / `BLESTA_ALLOW_HTTP` environment variables respected by the MCP
+  server's credential resolver.
+
+### Documentation
+
+- **`CLI_USAGE.md`** — comprehensive CLI reference covering all subcommands, output
+  formats (JSON, JSONL, CSV), and env var configuration.
+- **`MCP_USAGE.md`** — MCP server reference: installation, client config examples for
+  Claude Code and Claude Desktop, full tool/resource/prompt documentation with parameter
+  tables, and important constraints for billing mutation safety.
+- **README.md** updated with MCP installation option, expanded CLI subcommand section,
+  and MCP Server section with tools/resources tables and client config snippet.
+- **`SDK_USAGE.md`** updated with canonical sub-package import paths.
+
+### Internal
+
+- Compatibility shims (`blesta_sdk._client`, `_async_client`, `_discovery`, etc.) kept
+  as thin re-exports so all existing import paths continue to work without change.
+- Patch paths for test mocking preserved: `blesta_sdk._client.time`, `_async_client.asyncio`,
+  `_response.json`, `_retry.random` all importable via shims.
+
 ## [0.7.0] - 2026-05-27
 
 ### Added
