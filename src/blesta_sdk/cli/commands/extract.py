@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import logging
-import os
 from typing import TYPE_CHECKING
 
-from blesta_sdk.core.client import BlestaRequest
+from blesta_sdk.cli.formatters import _build_cli_client
 
 if TYPE_CHECKING:
     import argparse
@@ -60,24 +59,6 @@ def run(args: argparse.Namespace) -> None:
         print_jsonl,
     )
 
-    url = os.getenv("BLESTA_API_URL")
-    user = os.getenv("BLESTA_API_USER")
-    key = os.getenv("BLESTA_API_KEY")
-
-    if not all([url, user, key]):
-        print_error(
-            "Missing API credentials."
-            " Set BLESTA_API_URL, BLESTA_API_USER, and BLESTA_API_KEY."
-        )
-
-    auth_method = os.getenv("BLESTA_AUTH_METHOD", "basic").strip().lower()
-    allow_http = os.getenv("BLESTA_ALLOW_HTTP", "").strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
-
     params: dict[str, str] = {}
     for raw in args.params or []:
         if not raw or "=" not in raw:
@@ -89,13 +70,7 @@ def run(args: argparse.Namespace) -> None:
             logger.warning("Duplicate CLI param '%s' — last value wins", k)
         params[k] = v
 
-    api = BlestaRequest(
-        url,
-        user,
-        key,
-        auth_method=auth_method,
-        allow_http=allow_http,
-    )
+    api = _build_cli_client()
 
     rows = api.get_all(args.model, args.method, params or None)
 

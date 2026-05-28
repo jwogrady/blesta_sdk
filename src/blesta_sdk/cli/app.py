@@ -19,7 +19,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from blesta_sdk.core.client import BlestaRequest
+from blesta_sdk.cli.formatters import _build_cli_client
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -115,47 +115,19 @@ def main() -> None:
 def _run_legacy(args: argparse.Namespace) -> None:
     """Handle the legacy ``--model/--method`` syntax.
 
-    Delegates to the original :func:`~blesta_sdk._cli.cli` implementation
-    so existing callers and test patches continue to work unchanged.
+    Uses :func:`~blesta_sdk.cli.formatters._build_cli_client` to resolve
+    credentials from environment variables and construct the API client.
 
     :param args: Parsed arguments from the top-level parser.
     """
-    # Reconstruct sys.argv as if the legacy CLI was called directly.
-    # This is the simplest way to reuse the original argument parsing
-    # without duplicating credential / validation logic.
-    import os
+    import logging
 
     from blesta_sdk.cli.formatters import print_error, print_json
-
-    url = os.getenv("BLESTA_API_URL")
-    user = os.getenv("BLESTA_API_USER")
-    key = os.getenv("BLESTA_API_KEY")
-
-    if not all([url, user, key]):
-        print_error(
-            "Missing API credentials."
-            " Set BLESTA_API_URL, BLESTA_API_USER, and BLESTA_API_KEY."
-        )
 
     if not args.model:
         print_error("--model is required in legacy mode")
     if not args.method:
         print_error("--method is required in legacy mode")
-
-    auth_method = os.getenv("BLESTA_AUTH_METHOD", "basic").strip().lower()
-    if auth_method not in ("basic", "header"):
-        print_error(
-            f"Invalid BLESTA_AUTH_METHOD {auth_method!r}:"
-            " must be 'basic' or 'header'."
-        )
-    allow_http = os.getenv("BLESTA_ALLOW_HTTP", "").strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
-
-    import logging
 
     log = logging.getLogger(__name__)
     params: dict[str, str] = {}
@@ -169,13 +141,7 @@ def _run_legacy(args: argparse.Namespace) -> None:
             log.warning("Duplicate CLI param '%s' — last value wins", k)
         params[k] = v
 
-    api = BlestaRequest(
-        url,
-        user,
-        key,
-        auth_method=auth_method,
-        allow_http=allow_http,
-    )
+    api = _build_cli_client()
     response = api.submit(args.model, args.method, params, args.action)
 
     if response.status_code == 200:
