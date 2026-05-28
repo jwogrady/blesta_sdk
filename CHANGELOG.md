@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-05-27
+
 ### Fixed
 
 - **MCP tool error handling** — API-calling tools (`blesta_call`, `blesta_get_all`,
