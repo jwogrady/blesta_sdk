@@ -2961,16 +2961,14 @@ class TestCoreNamespaceImports:
         assert BRsp is BlestaResponse
 
     def test_core_errors_import(self):
-        from blesta_sdk.core.errors import BlestaError as BE
-
         from blesta_sdk import BlestaError
+        from blesta_sdk.core.errors import BlestaError as BE
 
         assert BE is BlestaError
 
     def test_core_config_import(self):
-        from blesta_sdk.core.config import BlestaEnvConfig as BEC
-
         from blesta_sdk import BlestaEnvConfig
+        from blesta_sdk.core.config import BlestaEnvConfig as BEC
 
         assert BEC is BlestaEnvConfig
 
@@ -3021,9 +3019,8 @@ class TestCoreNamespaceImports:
         assert BD is BlestaDiscovery
 
     def test_compat_shim_exceptions(self):
-        from blesta_sdk._exceptions import BlestaError as BE
-
         from blesta_sdk import BlestaError
+        from blesta_sdk._exceptions import BlestaError as BE
 
         assert BE is BlestaError
 
@@ -3033,8 +3030,134 @@ class TestCoreNamespaceImports:
         assert BRsp is BlestaResponse
 
     def test_compat_shim_env_config(self):
+        from blesta_sdk import BlestaEnvConfig
         from blesta_sdk._env_config import BlestaEnvConfig as BEC
 
-        from blesta_sdk import BlestaEnvConfig
-
         assert BEC is BlestaEnvConfig
+
+
+# ---------------------------------------------------------------------------
+# New CLI namespace tests (Issue #72)
+# ---------------------------------------------------------------------------
+
+
+class TestCliNamespaceImports:
+    """Verify the blesta_sdk.cli package and subcommand structure exist."""
+
+    def test_cli_app_main_callable(self):
+        from blesta_sdk.cli.app import main
+
+        assert callable(main)
+
+    def test_cli_init_exports_main(self):
+        from blesta_sdk.cli import main
+
+        assert callable(main)
+
+    def test_cli_formatters_importable(self):
+        from blesta_sdk.cli.formatters import (
+            print_csv,
+            print_error,
+            print_json,
+            print_jsonl,
+        )
+
+        assert all(
+            callable(f) for f in [print_json, print_jsonl, print_csv, print_error]
+        )
+
+    def test_cli_command_modules_importable(self):
+        from blesta_sdk.cli.commands import call, discover, extract, report
+
+        assert all(hasattr(m, "add_parser") for m in [call, extract, report, discover])
+        assert all(hasattr(m, "run") for m in [call, extract, report, discover])
+
+
+class TestCliSubcommandHelp:
+    """Verify argparse structure for each subcommand."""
+
+    def test_main_help_exits_zero(self, capsys):
+
+        from blesta_sdk.cli.app import _build_parser
+
+        parser = _build_parser()
+        with pytest.raises(SystemExit) as exc_info:
+            parser.parse_args(["--help"])
+        assert exc_info.value.code == 0
+
+    def test_call_subcommand_parsed(self):
+        from blesta_sdk.cli.app import _build_parser
+
+        parser = _build_parser()
+        args = parser.parse_args(
+            ["call", "clients", "getList", "--param", "status=active"]
+        )
+        assert args.subcommand == "call"
+        assert args.model == "clients"
+        assert args.method == "getList"
+        assert args.params == ["status=active"]
+
+    def test_extract_subcommand_parsed(self):
+        from blesta_sdk.cli.app import _build_parser
+
+        parser = _build_parser()
+        args = parser.parse_args(["extract", "clients", "getList", "--format", "jsonl"])
+        assert args.subcommand == "extract"
+        assert args.output_format == "jsonl"
+
+    def test_report_subcommand_parsed(self):
+        from blesta_sdk.cli.app import _build_parser
+
+        parser = _build_parser()
+        args = parser.parse_args(
+            [
+                "report",
+                "package_revenue",
+                "--start",
+                "2025-01-01",
+                "--end",
+                "2025-01-31",
+            ]
+        )
+        assert args.subcommand == "report"
+        assert args.report_type == "package_revenue"
+        assert args.start == "2025-01-01"
+        assert args.end == "2025-01-31"
+
+    def test_discover_models_subcommand_parsed(self):
+        from blesta_sdk.cli.app import _build_parser
+
+        parser = _build_parser()
+        args = parser.parse_args(["discover", "models"])
+        assert args.subcommand == "discover"
+        assert args.discover_cmd == "models"
+
+    def test_discover_methods_subcommand_parsed(self):
+        from blesta_sdk.cli.app import _build_parser
+
+        parser = _build_parser()
+        args = parser.parse_args(["discover", "methods", "Clients"])
+        assert args.discover_cmd == "methods"
+        assert args.model == "Clients"
+
+    def test_discover_spec_subcommand_parsed(self):
+        from blesta_sdk.cli.app import _build_parser
+
+        parser = _build_parser()
+        args = parser.parse_args(["discover", "spec", "Clients", "getList"])
+        assert args.discover_cmd == "spec"
+        assert args.model == "Clients"
+        assert args.method == "getList"
+
+    def test_legacy_flags_still_parsed(self):
+        """The old --model/--method flags still parse correctly."""
+        from blesta_sdk.cli.app import _build_parser
+
+        parser = _build_parser()
+        args = parser.parse_args(
+            ["--model", "clients", "--method", "getList", "--action", "GET"]
+        )
+        assert args.model == "clients"
+        assert args.method == "getList"
+        assert args.action == "GET"
+        assert args.subcommand is None
