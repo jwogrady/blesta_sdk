@@ -7,22 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.8.2] - 2026-05-27
+## [0.8.2] - 2026-05-28
 
 ### Changed
 
 - **CLI credential resolution centralised** — `_build_cli_client()` helper added to
   `blesta_sdk.cli.formatters`; all four CLI surfaces (`call`, `extract`, `report`,
   `app._run_legacy`) now use it instead of duplicating the same 17-line credential/client
-  block. No behaviour change.
+  construction block. No behaviour change.
+- **CLI tests** updated to patch `_build_cli_client()` at each command's import site
+  instead of patching `BlestaRequest` at multiple independent call sites.
 
 ### Fixed
 
-- **`cli/app.py` docstring** — `_run_legacy()` docstring incorrectly claimed it delegated
-  to `blesta_sdk._cli.cli`. It has always been an independent implementation; the docstring
-  is now accurate.
+- **`cli/app.py:_run_legacy()` docstring** — incorrectly claimed the function delegated to
+  `blesta_sdk._cli.cli`. It has always been an independent implementation; the docstring is
+  now accurate.
 - **`CLI_USAGE.md`** — `BLESTA_ALLOW_HTTP` was missing from the env-var reference table.
-  Added with default, accepted values, and a note that HTTPS is enforced by default.
+  Added with accepted values (`1`, `true`, `yes`, `on`) and a note that HTTPS is enforced
+  by default.
+
+### Added
+
+- **`docs/qc/code-quality-audit.md`** — code quality audit document covering package
+  layout, public API map, CLI/MCP registry, duplicate-code candidates, dead-code analysis,
+  nesting candidates, and docs-drift findings. Confirms compat shims intentionally live.
+- **Tests for `_build_cli_client()`** — five new tests covering missing credentials,
+  invalid `BLESTA_AUTH_METHOD`, `BLESTA_ALLOW_HTTP=true`, header auth, and the happy path.
 
 ## [0.8.1] - 2026-05-27
 
