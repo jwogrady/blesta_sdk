@@ -11,7 +11,7 @@ import logging
 import os
 import sys
 
-from blesta_sdk._client import BlestaRequest
+from blesta_sdk.core.client import BlestaRequest
 
 logger = logging.getLogger(__name__)
 
