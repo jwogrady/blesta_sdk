@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`blesta call` exit code** — the `call` subcommand now exits with code 1 on non-200
+  HTTP responses, matching the documented behaviour in `CLI_USAGE.md` and `README.md`.
+  Previously only the legacy `--model/--method` mode exited non-zero on HTTP errors.
+
+### Changed
+
+- **CLAUDE.md project structure** — updated all module paths from legacy flat layout
+  (`_client.py`, `_cli.py`, `_discovery.py`, etc.) to the current namespaced layout
+  (`core/client.py`, `cli/app.py`, `discovery/registry.py`, etc.). Entry-point script
+  is correctly shown as `blesta_sdk.cli.app:main`.
+- **CLAUDE.md architecture notes** — removed references to non-existent `response.ok`
+  property; use `response.errors()` and `raise_on_error=True` instead.
+- **README.md and SDK_USAGE.md** — DataFrame conversion section now mentions
+  `pip install "blesta_sdk[data]"` as the preferred install path for pandas support.
+- **SDK_USAGE.md** — `call()` schema-aware description corrected: ambiguous method names
+  raise `ValueError`, not silently default to POST.
+
 ## [0.8.2] - 2026-05-28
 
 ### Changed

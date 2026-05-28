@@ -70,4 +70,7 @@ def run(args: argparse.Namespace) -> None:
     if response.status_code == 200:
         print_json(response.data)
     else:
-        print_json(response.errors())
+        print_error(
+            f"API error: HTTP {response.status_code}",
+            exit_code=1,
+        )

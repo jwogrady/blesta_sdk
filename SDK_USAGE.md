@@ -81,7 +81,7 @@ response = api.submit("clients", "create", {"firstname": "John"}, action="POST")
 
 ### Schema-Aware Calls
 
-`call()` infers the HTTP method from the bundled API schema. If a method is not in the schema, the SDK infers the verb from the method name (e.g. `get*` -> GET, `create*` -> POST, `edit*` -> PUT, `delete*` -> DELETE). If still ambiguous, defaults to POST with a warning.
+`call()` infers the HTTP method from the bundled API schema. If a method is not in the schema, the SDK infers the verb from the method name (e.g. `get*` -> GET, `create*` -> POST, `edit*` -> PUT, `delete*` -> DELETE). If the HTTP method still cannot be determined, `ValueError` is raised — pass `action=` explicitly to avoid this.
 
 ```python
 response = api.call("clients", "getList")   # infers GET
@@ -227,7 +227,7 @@ for period, response in api.get_report_series_pages("tax_liability", "2025-01", 
 
 ## DataFrame Conversion
 
-Requires `pandas` (`pip install pandas`).
+Requires pandas. Install with `pip install "blesta_sdk[data]"` or install pandas directly (`pip install pandas`).
 
 ```python
 # CSV response
