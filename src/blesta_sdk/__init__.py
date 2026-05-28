@@ -1,9 +1,8 @@
 """Python SDK and CLI for the Blesta billing platform REST API."""
 
-from ._client import BlestaRequest
-from ._discovery import BlestaDiscovery, MethodSpec
-from ._env_config import BlestaEnvConfig
-from ._exceptions import (
+from blesta_sdk.core.client import BlestaRequest
+from blesta_sdk.core.config import BlestaEnvConfig
+from blesta_sdk.core.errors import (
     BlestaAPIError,
     BlestaAuthError,
     BlestaConnectionError,
@@ -12,7 +11,8 @@ from ._exceptions import (
     BlestaServerError,
     PaginationError,
 )
-from ._response import BlestaResponse
+from blesta_sdk.core.response import BlestaResponse
+from blesta_sdk.discovery.registry import BlestaDiscovery, MethodSpec
 
 __all__ = [
     "AsyncBlestaRequest",
@@ -35,7 +35,7 @@ __all__ = [
 def __getattr__(name: str) -> object:
     if name == "AsyncBlestaRequest":
         try:
-            from ._async_client import AsyncBlestaRequest
+            from blesta_sdk.core.async_client import AsyncBlestaRequest
         except ImportError as err:
             raise ImportError(
                 "AsyncBlestaRequest requires httpx. "

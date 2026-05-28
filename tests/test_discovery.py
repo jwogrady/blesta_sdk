@@ -435,7 +435,7 @@ def test_load_bundled_schema_none_text(caplog):
     disco._pagination_map = {}
 
     with (
-        patch("blesta_sdk._discovery._bundled_schema_text", return_value=None),
+        patch("blesta_sdk.discovery.registry._bundled_schema_text", return_value=None),
         caplog.at_level(logging.WARNING),
     ):
         disco._load_bundled_schema("nonexistent.json", "core")
@@ -459,7 +459,7 @@ def test_load_bundled_schema_invalid_json(caplog):
 
     with (
         patch(
-            "blesta_sdk._discovery._bundled_schema_text",
+            "blesta_sdk.discovery.registry._bundled_schema_text",
             return_value="not valid json {{{",
         ),
         caplog.at_level(logging.WARNING),
@@ -631,7 +631,7 @@ def test_model_collision_logs_warning(tmp_path, caplog):
     core_path.write_text(json.dumps(CORE_SCHEMA))
     plugin_path.write_text(json.dumps(colliding_plugin))
 
-    with caplog.at_level(logging.WARNING, logger="blesta_sdk._discovery"):
+    with caplog.at_level(logging.WARNING, logger="blesta_sdk.discovery.registry"):
         disco = BlestaDiscovery(
             core_schema_path=core_path,
             plugin_schema_path=plugin_path,
@@ -658,7 +658,7 @@ def test_models_not_dict(tmp_path, caplog):
     core_path.write_text(json.dumps(bad_schema))
     plugin_path.write_text(json.dumps(PLUGIN_SCHEMA))
 
-    with caplog.at_level(logging.WARNING, logger="blesta_sdk._discovery"):
+    with caplog.at_level(logging.WARNING, logger="blesta_sdk.discovery.registry"):
         disco = BlestaDiscovery(
             core_schema_path=core_path,
             plugin_schema_path=plugin_path,
@@ -682,7 +682,7 @@ def test_methods_not_dict(tmp_path, caplog):
     core_path.write_text(json.dumps(bad_schema))
     plugin_path.write_text(json.dumps(PLUGIN_SCHEMA))
 
-    with caplog.at_level(logging.WARNING, logger="blesta_sdk._discovery"):
+    with caplog.at_level(logging.WARNING, logger="blesta_sdk.discovery.registry"):
         disco = BlestaDiscovery(
             core_schema_path=core_path,
             plugin_schema_path=plugin_path,
