@@ -50,6 +50,12 @@ For async support:
 pip install blesta_sdk[async]
 ```
 
+For the MCP server (Python 3.10+):
+
+```bash
+pip install blesta_sdk[mcp]
+```
+
 ## Quickstart
 
 ### Sync
@@ -631,29 +637,108 @@ BLESTA_API_KEY=your_api_key
 
 Generate API credentials in Blesta under Settings > System > API Access.
 
-### Usage
+### Subcommands
 
 ```
-blesta --model <model> --method <method> [--action GET|POST|PUT|DELETE] [--params key=value ...] [--last-request]
+blesta call   <model> <method> [--action GET|POST|PUT|DELETE] [--param key=value ...]
+blesta extract <model> <method> [--param key=value ...] [--format json|jsonl|csv]
+blesta report  <type> --start YYYY-MM-DD --end YYYY-MM-DD [--param key=value ...]
+blesta discover models|methods <model>|spec <model> <method>
+```
+
+### Legacy mode (still supported)
+
+```
+blesta --model <model> --method <method> [--action GET|POST|PUT|DELETE] [--params key=value ...]
 ```
 
 ### Examples
 
 ```bash
-# List active clients
-blesta --model clients --method getList --params status=active
+# List active clients (subcommand form)
+blesta call clients getList --param status=active
 
-# Get a specific client
-blesta --model clients --method get --params client_id=1
+# Paginate all clients into a JSONL stream
+blesta extract clients getList --format jsonl
 
-# Create a client via POST
-blesta --model clients --method create --action POST --params firstname=John lastname=Doe
+# Fetch a revenue report
+blesta report package_revenue --start 2025-01-01 --end 2025-03-31
 
-# Show the URL and parameters of the request (sensitive values redacted)
-blesta --model clients --method getList --last-request
+# Discover available models
+blesta discover models
+
+# List methods for a model
+blesta discover methods clients
+
+# Show full method spec
+blesta discover spec clients getList
 ```
 
 Output is JSON to stdout. On errors, the error dict is printed as JSON and the process exits with code 1.
+
+See [`CLI_USAGE.md`](CLI_USAGE.md) for the full CLI reference.
+
+## MCP Server
+
+The `blesta-mcp` command exposes the full Blesta API as an [MCP](https://modelcontextprotocol.io/) server for use with Claude, Cursor, and other MCP-compatible AI tools.
+
+Requires Python 3.10+ and the `mcp` extra:
+
+```bash
+pip install blesta_sdk[mcp]
+```
+
+Configure credentials via environment variables (same as the CLI), then run:
+
+```bash
+blesta-mcp
+```
+
+Or register it in your MCP client configuration (e.g. Claude Desktop / Claude Code):
+
+```json
+{
+  "mcpServers": {
+    "blesta": {
+      "command": "blesta-mcp",
+      "env": {
+        "BLESTA_API_URL": "https://billing.example.com/api",
+        "BLESTA_API_USER": "api_user",
+        "BLESTA_API_KEY": "api_key"
+      }
+    }
+  }
+}
+```
+
+### Tools
+
+| Tool | Description |
+|---|---|
+| `blesta_call` | Invoke any single API method |
+| `blesta_get_all` | Paginate a list endpoint and return all records |
+| `blesta_extract` | Fetch multiple paginated endpoints at once |
+| `blesta_count` | Fetch a record count |
+| `blesta_get_report` | Fetch a Blesta report (CSV or JSON) |
+| `blesta_get_report_series` | Fetch monthly reports across a date range |
+| `blesta_list_models` | List all available API models |
+| `blesta_list_methods` | List methods for a model |
+| `blesta_get_method_spec` | Get full spec for a model/method pair |
+| `blesta_capabilities_report` | Generate a full API capabilities report |
+
+### Resources
+
+| Resource URI | Description |
+|---|---|
+| `blesta://schema/core` | Raw core API schema JSON |
+| `blesta://schema/plugin` | Raw plugin schema JSON |
+| `blesta://models` | All available model names |
+| `blesta://models/{model}` | Methods for a specific model |
+| `blesta://models/{model}/methods/{method}` | Full spec for a model/method |
+| `blesta://capabilities/markdown` | API capabilities report (Markdown) |
+| `blesta://capabilities/json` | API capabilities report (JSON) |
+
+See [`MCP_USAGE.md`](MCP_USAGE.md) for the full MCP server reference.
 
 ## API Reference
 

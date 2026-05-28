@@ -2,6 +2,32 @@
 
 Patterns and examples for writing code that uses `blesta_sdk`. This is a companion to `CLAUDE.md` (project conventions).
 
+## Import Paths
+
+The top-level `blesta_sdk` namespace re-exports everything. All public names are importable
+from both the legacy flat path and the new canonical sub-packages:
+
+```python
+# Recommended: top-level imports (always stable)
+from blesta_sdk import BlestaRequest, AsyncBlestaRequest
+from blesta_sdk import BlestaEnvConfig
+from blesta_sdk import BlestaDiscovery, MethodSpec
+from blesta_sdk import BlestaError, BlestaAPIError, BlestaAuthError
+from blesta_sdk import BlestaRateLimitError, BlestaServerError, PaginationError
+from blesta_sdk import BlestaResponse
+
+# Canonical sub-package imports (v0.8+)
+from blesta_sdk.core import BlestaRequest, BlestaEnvConfig
+from blesta_sdk.discovery import BlestaDiscovery, MethodSpec
+```
+
+The `blesta_sdk.mcp` namespace is separate and requires `pip install blesta_sdk[mcp]`:
+
+```python
+from blesta_sdk.mcp.tools import _call_handler   # tool handlers
+from blesta_sdk.mcp.resources import _models_handler  # resource handlers
+```
+
 ## Initialization
 
 All API calls go through `model`/`method` pairs that map to Blesta's REST routes (`/api/model/method.json`). For plugin models, use dot notation: `"plugin.model"`.
