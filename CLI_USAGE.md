@@ -200,5 +200,6 @@ blesta extract clients getList --format jsonl | jq '.id'
 | `BLESTA_API_USER` | Yes | — | API username |
 | `BLESTA_API_KEY` | Yes | — | API key |
 | `BLESTA_AUTH_METHOD` | No | `basic` | `basic` or `header` |
+| `BLESTA_ALLOW_HTTP` | No | unset | Set to `1`, `true`, `yes`, or `on` to permit `http://` base URLs (local/dev only; HTTPS is enforced by default) |
 
 See [`SDK_USAGE.md`](SDK_USAGE.md) for the full programmatic API reference.

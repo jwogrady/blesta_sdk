@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **CLI credential resolution centralised** — `_build_cli_client()` helper added to
+  `blesta_sdk.cli.formatters`; all four CLI surfaces (`call`, `extract`, `report`,
+  `app._run_legacy`) now use it instead of duplicating the same 17-line credential/client
+  block. No behaviour change.
+
+### Fixed
+
+- **`cli/app.py` docstring** — `_run_legacy()` docstring incorrectly claimed it delegated
+  to `blesta_sdk._cli.cli`. It has always been an independent implementation; the docstring
+  is now accurate.
+- **`CLI_USAGE.md`** — `BLESTA_ALLOW_HTTP` was missing from the env-var reference table.
+  Added with default, accepted values, and a note that HTTPS is enforced by default.
+
 ## [0.8.1] - 2026-05-27
 
 ### Fixed
