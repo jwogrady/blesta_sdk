@@ -631,3 +631,145 @@ def test_get_report_handler_json_data():
     data = json.loads(result)
     assert data["ok"] is True
     assert data["data"] == {"rows": [1, 2, 3]}
+
+
+# ---------------------------------------------------------------------------
+# Tool error handling: missing credentials → structured JSON error
+# ---------------------------------------------------------------------------
+
+
+def test_call_handler_missing_creds_returns_json_error():
+    """_call_handler returns ok=False JSON when credentials are missing."""
+    from blesta_sdk.mcp.tools import _call_handler
+
+    with patch.dict(os.environ, {}, clear=True):
+        result = _call_handler("Clients", "getList")
+
+    data = json.loads(result)
+    assert data["ok"] is False
+    assert "error" in data
+    assert "BLESTA_API" in data["error"]
+
+
+def test_get_all_handler_missing_creds_returns_json_error():
+    """_get_all_handler returns ok=False JSON when credentials are missing."""
+    from blesta_sdk.mcp.tools import _get_all_handler
+
+    with patch.dict(os.environ, {}, clear=True):
+        result = _get_all_handler("Clients", "getList")
+
+    data = json.loads(result)
+    assert data["ok"] is False
+    assert "error" in data
+
+
+def test_extract_handler_missing_creds_returns_json_error():
+    """_extract_handler returns ok=False JSON when credentials are missing."""
+    from blesta_sdk.mcp.tools import _extract_handler
+
+    with patch.dict(os.environ, {}, clear=True):
+        result = _extract_handler('[["Clients", "getList"]]')
+
+    data = json.loads(result)
+    assert data["ok"] is False
+    assert "error" in data
+
+
+def test_count_handler_missing_creds_returns_json_error():
+    """_count_handler returns ok=False JSON when credentials are missing."""
+    from blesta_sdk.mcp.tools import _count_handler
+
+    with patch.dict(os.environ, {}, clear=True):
+        result = _count_handler("Clients")
+
+    data = json.loads(result)
+    assert data["ok"] is False
+    assert "error" in data
+
+
+def test_get_report_handler_missing_creds_returns_json_error():
+    """_get_report_handler returns ok=False JSON when credentials are missing."""
+    from blesta_sdk.mcp.tools import _get_report_handler
+
+    with patch.dict(os.environ, {}, clear=True):
+        result = _get_report_handler("package_revenue", "2025-01-01", "2025-01-31")
+
+    data = json.loads(result)
+    assert data["ok"] is False
+    assert "error" in data
+
+
+def test_get_report_series_handler_missing_creds_returns_json_error():
+    """_get_report_series_handler returns ok=False JSON when credentials are missing."""
+    from blesta_sdk.mcp.tools import _get_report_series_handler
+
+    with patch.dict(os.environ, {}, clear=True):
+        result = _get_report_series_handler("package_revenue", "2025-01", "2025-03")
+
+    data = json.loads(result)
+    assert data["ok"] is False
+    assert "error" in data
+
+
+# ---------------------------------------------------------------------------
+# server.main() ImportError → clean stderr exit
+# ---------------------------------------------------------------------------
+
+
+def test_main_import_error_exits_cleanly(capsys):
+    """main() exits with code 1 and prints clean error when mcp not installed."""
+    from blesta_sdk.mcp.server import main
+
+    with (
+        patch(
+            "blesta_sdk.mcp.server._build_server",
+            side_effect=ImportError("blesta-mcp requires the mcp package."),
+        ),
+        pytest.raises(SystemExit) as exc_info,
+    ):
+        main()
+
+    assert exc_info.value.code == 1
+    captured = capsys.readouterr()
+    assert "blesta-mcp requires the mcp package" in captured.err
+
+
+# ---------------------------------------------------------------------------
+# Prompt write-safety: all prompts must include a safety note
+# ---------------------------------------------------------------------------
+
+
+def test_all_prompts_have_write_safety_note():
+    """Every prompt template must contain a read-only or write-safety note."""
+    from blesta_sdk.mcp.prompts import PROMPT_REGISTRY
+
+    safety_terms = [
+        "read-only",
+        "do not",
+        "not provide idempotency",
+        "deduplication",
+        "ledger",
+        "not attempt",
+        "confirm",
+    ]
+    for name, template, _desc in PROMPT_REGISTRY:
+        lower = template.lower()
+        has_note = any(term in lower for term in safety_terms)
+        assert has_note, (
+            f"Prompt {name!r} is missing a write-safety note. "
+            f"Add a 'Note:' section with safety guidance."
+        )
+
+
+# ---------------------------------------------------------------------------
+# blesta_call description includes mutation warning
+# ---------------------------------------------------------------------------
+
+
+def test_blesta_call_description_mentions_mutation():
+    """blesta_call tool description must mention mutation idempotency risk."""
+    from blesta_sdk.mcp.tools import TOOL_REGISTRY
+
+    call_entry = next(e for e in TOOL_REGISTRY if e[0] == "blesta_call")
+    desc = call_entry[2].lower()
+    assert "idempotent" in desc or "mutation" in desc or "deduplication" in desc
