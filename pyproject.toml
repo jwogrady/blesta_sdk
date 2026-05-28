@@ -28,9 +28,10 @@ dependencies = [
 [project.optional-dependencies]
 cli = ["python-dotenv>=1.2.1"]
 async = ["httpx>=0.27"]
+data = ["pandas>=2.0"]
 
 [project.scripts]
-blesta = "blesta_sdk._cli:cli"
+blesta = "blesta_sdk.cli.app:main"
 
 [project.urls]
 Repository = "https://github.com/jwogrady/blesta_sdk"
