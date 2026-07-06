@@ -58,6 +58,59 @@ def test_print_error_exits(capsys):
     assert "something went wrong" in out
 
 
+def test_parse_params_coerces_json_types():
+    from blesta_sdk.cli.formatters import parse_params
+
+    result = parse_params(
+        [
+            "client_id=868",
+            "status=active",
+            "flag=true",
+            "ratio=1.5",
+            "empty=null",
+            "ids=[1, 2]",
+        ]
+    )
+    assert result == {
+        "client_id": 868,
+        "status": "active",
+        "flag": True,
+        "ratio": 1.5,
+        "empty": None,
+        "ids": [1, 2],
+    }
+    assert isinstance(result["client_id"], int)
+
+
+def test_parse_params_preserves_leading_zero_strings():
+    from blesta_sdk.cli.formatters import parse_params
+
+    # Leading-zero identifiers (zip codes, id_codes) are not valid JSON numbers,
+    # so they stay strings rather than being mangled into ints.
+    assert parse_params(["code=007", "zip=00501"]) == {"code": "007", "zip": "00501"}
+
+
+def test_parse_params_none_and_empty():
+    from blesta_sdk.cli.formatters import parse_params
+
+    assert parse_params(None) == {}
+    assert parse_params([]) == {}
+
+
+def test_parse_params_invalid_exits(capsys):
+    from blesta_sdk.cli.formatters import parse_params
+
+    with pytest.raises(SystemExit):
+        parse_params(["noequalssign"])
+
+
+def test_parse_params_empty_key_exits(capsys):
+    from blesta_sdk.cli.formatters import parse_params
+
+    with pytest.raises(SystemExit):
+        parse_params(["=value"])
+
+
 # ---------------------------------------------------------------------------
 # _build_cli_client helper
 # ---------------------------------------------------------------------------
@@ -179,6 +232,34 @@ def test_call_run_inferred_method(capsys):
 
     out = capsys.readouterr().out
     assert "id" in out
+
+
+def test_call_run_passes_coerced_int_param(capsys):
+    from blesta_sdk.cli.app import _build_parser
+    from blesta_sdk.cli.commands import call
+
+    mock_resp = _mock_response(data=[])
+    with (
+        patch.dict(os.environ, _CREDS),
+        patch("blesta_sdk.cli.commands.call._build_cli_client") as MockBuild,
+    ):
+        MockBuild.return_value.call.return_value = mock_resp
+        args = _build_parser().parse_args(
+            [
+                "call",
+                "transactions",
+                "getList",
+                "--param",
+                "client_id=868",
+                "status=approved",
+            ]
+        )
+        call.run(args)
+
+    # api.call(model, method, params) — assert the int reached it, not a string.
+    _, _, params = MockBuild.return_value.call.call_args[0]
+    assert params == {"client_id": 868, "status": "approved"}
+    assert isinstance(params["client_id"], int)
 
 
 def test_call_run_missing_creds():

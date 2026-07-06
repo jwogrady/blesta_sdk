@@ -49,17 +49,27 @@ blesta call <model> <method> [--action GET|POST|PUT|DELETE] [--param key=value .
 # GET — schema-inferred
 blesta call clients getList --param status=active
 
-# GET with nested param
-blesta call clients getList --param status=active --param page=1
+# Multiple params — pass all pairs after a SINGLE --param flag
+blesta call clients getList --param status=active page=1
 
 # POST — explicit action
-blesta call clients create --action POST --param firstname=John --param lastname=Doe
+blesta call clients create --action POST --param firstname=John lastname=Doe
 
 # Schema-aware (HTTP method inferred automatically)
 blesta call invoices getList
 ```
 
 Output is JSON to stdout. On API or HTTP errors, prints a JSON error and exits with code 1.
+
+**Passing multiple params:** `--param` takes all `key=value` pairs after it (e.g.
+`--param a=1 b=2`). Repeating the flag (`--param a=1 --param b=2`) keeps only the last
+group, so put every pair after one `--param`.
+
+**Value typing:** values are coerced to their natural JSON type — `client_id=868` is sent
+as the integer `868`, `flag=true` as a boolean, `ids=[1,2]` as a list. This matters
+because Blesta silently ignores numeric filters (like `client_id`) sent as strings.
+Values that are not valid JSON stay strings, so plain words (`status=active`), dates, and
+leading-zero identifiers (`code=007`) are preserved as-is.
 
 ---
 
