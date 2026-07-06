@@ -123,6 +123,29 @@ def test_all_required_prompts_registered():
 
 
 # ---------------------------------------------------------------------------
+# Real FastMCP boot (requires the mcp package; skipped where it is absent)
+# ---------------------------------------------------------------------------
+
+
+async def test_build_server_boots_with_real_fastmcp():
+    """Construct the real server to catch startup/signature regressions.
+
+    The other MCP tests mock the ``mcp`` module, so they never exercise the real
+    ``FastMCP`` constructor — which is why an unsupported ``version=`` kwarg once
+    shipped and broke ``blesta-mcp`` on boot with no failing test. This builds the
+    actual server (registering all tools, resources, and prompts) and verifies the
+    expected tools are present.
+    """
+    pytest.importorskip("mcp")
+    from blesta_sdk.mcp.server import _build_server
+
+    server = _build_server()
+    tools = await server.list_tools()
+    names = {tool.name for tool in tools}
+    assert names >= _REQUIRED_TOOLS, f"Missing tools: {_REQUIRED_TOOLS - names}"
+
+
+# ---------------------------------------------------------------------------
 # Tool handler unit tests (no mcp required)
 # ---------------------------------------------------------------------------
 
