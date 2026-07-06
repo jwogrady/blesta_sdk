@@ -464,12 +464,12 @@ class AsyncBlestaRequest:
         batch_size: int = 10,
         verify: bool = False,
     ) -> list[Any]:
-        """Fetch all pages in parallel batches using a count-first strategy.
+        """Fetch all pages concurrently using a count-first strategy.
 
-        Calls :meth:`count` to determine total records, then fetches
-        pages concurrently in batches of *batch_size* via
-        :func:`asyncio.gather`. Falls back to :meth:`get_all` if the
-        count call returns ``0`` or fails.
+        Calls :meth:`count` to determine total records, then launches all page
+        fetches via :func:`asyncio.gather`, with concurrency bounded by the
+        client's ``max_concurrency`` semaphore. Falls back to :meth:`get_all`
+        if the count call returns ``0`` or fails.
 
         .. note::
             The count is a snapshot; records may change between the
@@ -483,7 +483,8 @@ class AsyncBlestaRequest:
         :param args: Query parameters (``page`` is managed automatically).
         :param page_size: Expected items per page. Must match the API's
             page size. Defaults to ``25``.
-        :param batch_size: Pages to fetch in parallel per batch.
+        :param batch_size: Retained for backward compatibility; no longer
+            limits concurrency (the ``max_concurrency`` semaphore does).
             Defaults to ``10``.
         :param verify: If ``True``, re-count after fetching and log
             a warning if the count changed. Defaults to ``False``.
@@ -513,30 +514,31 @@ class AsyncBlestaRequest:
 
         all_items: list[Any] = []
 
-        for batch_start in range(1, total_pages + 1, batch_size):
-            batch_end = min(batch_start + batch_size, total_pages + 1)
+        async def _fetch_page(page: int) -> list[Any]:
+            async with self._semaphore:
+                page_args = {**args, "page": page}
+                response = await self.get(model, method, page_args)
+                if response.status_code != 200:
+                    logger.warning(
+                        "get_all_fast: HTTP %d on page %d",
+                        response.status_code,
+                        page,
+                    )
+                    return []
+                data = response.data
+                if not data:
+                    return []
+                return data if isinstance(data, list) else [data]
 
-            async def _fetch_page(page: int) -> list[Any]:
-                async with self._semaphore:
-                    page_args = {**args, "page": page}
-                    response = await self.get(model, method, page_args)
-                    if response.status_code != 200:
-                        logger.warning(
-                            "get_all_fast: HTTP %d on page %d",
-                            response.status_code,
-                            page,
-                        )
-                        return []
-                    data = response.data
-                    if not data:
-                        return []
-                    return data if isinstance(data, list) else [data]
-
-            pages_data = await asyncio.gather(
-                *[_fetch_page(p) for p in range(batch_start, batch_end)]
-            )
-            for page_items in pages_data:
-                all_items.extend(page_items)
+        # Launch every page at once; concurrency is bounded by the semaphore
+        # (``max_concurrency``). Unlike per-batch gathering, no page waits on the
+        # slowest page of an arbitrary window, so a slow page can't stall the
+        # rest. ``asyncio.gather`` preserves order, so results stay page-ordered.
+        pages_data = await asyncio.gather(
+            *[_fetch_page(p) for p in range(1, total_pages + 1)]
+        )
+        for page_items in pages_data:
+            all_items.extend(page_items)
 
         if verify:
             new_total = await self.count(model, count_method, args)

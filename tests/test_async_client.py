@@ -519,7 +519,7 @@ async def test_async_get_all_fast_fallback_on_count_error(async_api):
 
 
 async def test_async_get_all_fast_batch_size(async_api):
-    """get_all_fast respects batch_size for parallel fetching."""
+    """get_all_fast accepts batch_size (kept for compatibility) and returns all."""
     count_resp = Mock(text=json.dumps({"response": 75}), status_code=200)
     pages = []
     for p in range(3):
@@ -537,6 +537,42 @@ async def test_async_get_all_fast_batch_size(async_api):
         )
 
     assert len(result) == 75
+
+
+async def test_async_get_all_fast_concurrency_not_capped_by_batch_size():
+    """Concurrency is bounded by max_concurrency, not batch_size (#102).
+
+    With batch_size(2) < max_concurrency(5), the old per-batch code capped
+    parallelism at 2; now all pages launch under the semaphore, so peak
+    in-flight requests reach max_concurrency.
+    """
+    api = AsyncBlestaRequest(
+        "https://example.com/api", "user", "key", max_concurrency=5
+    )
+    concurrent = 0
+    peak = 0
+
+    async def fake_get(url: str, **kwargs: object) -> object:
+        nonlocal concurrent, peak
+        if "getListCount" in url:
+            return Mock(text=json.dumps({"response": 250}), status_code=200, headers={})
+        concurrent += 1
+        peak = max(peak, concurrent)
+        await asyncio.sleep(0.01)
+        concurrent -= 1
+        return Mock(
+            text=json.dumps({"response": [{"id": 1}]}), status_code=200, headers={}
+        )
+
+    with patch.object(api.client, "get", side_effect=fake_get):
+        result = await api.get_all_fast(
+            "transactions", "getList", page_size=25, batch_size=2
+        )
+    await api.close()
+
+    assert len(result) == 10  # 250 / 25 = 10 pages, one item each
+    assert peak > 2  # exceeded batch_size -> not batch-capped
+    assert peak <= 5  # bounded by max_concurrency
 
 
 # --- close() ---
