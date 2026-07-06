@@ -475,8 +475,9 @@ def main() -> None:
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with open(args.output, "w") as f:
-        json.dump(schema, f, indent=2, sort_keys=True)
-        f.write("\n")
+        # Minified: the schema is parsed via json.loads at runtime (whitespace
+        # is irrelevant), so drop indentation to keep the bundled file small.
+        json.dump(schema, f, separators=(",", ":"), sort_keys=True)
 
     logger.info("Schema written to %s", args.output)
 
