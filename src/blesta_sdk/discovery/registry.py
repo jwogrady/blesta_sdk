@@ -24,6 +24,7 @@ from __future__ import annotations
 import importlib.resources
 import json
 import logging
+import threading
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
@@ -127,25 +128,50 @@ class BlestaDiscovery:
         self._registry: dict[str, dict[str, Any]] | None = None
         self._source_map: dict[str, str] | None = None
         self._pagination_map: dict[str, dict[str, str]] | None = None
+        self._loaded = False
+        self._load_lock = threading.Lock()
+
+    @property
+    def is_loaded(self) -> bool:
+        """Whether the bundled schemas have been parsed yet."""
+        return self._loaded
+
+    def ensure_loaded(self) -> None:
+        """Parse the bundled schemas if not already loaded.
+
+        Public entry point so async callers can offload the (large) parse to a
+        worker thread via :func:`asyncio.to_thread` before doing lookups, keeping
+        the event loop unblocked.
+        """
+        self._ensure_loaded()
 
     def _ensure_loaded(self) -> None:
-        """Load schemas lazily on first access."""
-        if self._registry is not None:
+        """Load schemas lazily on first access (thread-safe)."""
+        if self._loaded:
             return
 
-        self._registry = {}
-        self._source_map = {}
-        self._pagination_map = {}
+        # Double-checked locking: the parse can now be triggered concurrently
+        # (e.g. offloaded to a worker thread), so serialize it and only expose
+        # the registry once fully populated — never a partial dict.
+        with self._load_lock:
+            if self._loaded:
+                return
 
-        if self._core_path:
-            self._load_schema_file(self._core_path, "core")
-        else:
-            self._load_bundled_schema("blesta_api_schema.json", "core")
+            self._registry = {}
+            self._source_map = {}
+            self._pagination_map = {}
 
-        if self._plugin_path:
-            self._load_schema_file(self._plugin_path, "plugin")
-        else:
-            self._load_bundled_schema("blesta_plugin_schema.json", "plugin")
+            if self._core_path:
+                self._load_schema_file(self._core_path, "core")
+            else:
+                self._load_bundled_schema("blesta_api_schema.json", "core")
+
+            if self._plugin_path:
+                self._load_schema_file(self._plugin_path, "plugin")
+            else:
+                self._load_bundled_schema("blesta_plugin_schema.json", "plugin")
+
+            self._loaded = True
 
     def _load_bundled_schema(self, filename: str, source: str) -> None:
         """Load a bundled schema from the ``blesta_sdk.schemas`` package.

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sys
 from typing import TYPE_CHECKING, Any
@@ -10,7 +11,50 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from blesta_sdk.core.client import BlestaRequest
 
+logger = logging.getLogger(__name__)
+
 _TRUTHY_ENV = {"1", "true", "yes", "on"}
+
+
+def _coerce_param_value(value: str) -> Any:
+    """Coerce a CLI string value to its natural JSON type.
+
+    Numbers, booleans, ``null``, and JSON arrays/objects are parsed via
+    :func:`json.loads`; anything that is not valid JSON (plain words like
+    ``"active"``, dates, or leading-zero identifiers like ``"007"``) is returned
+    unchanged as a string.  This lets numeric filters such as ``client_id=868``
+    reach the API as integers, which Blesta requires — passed as a string they
+    are silently ignored.
+
+    :param value: Raw string value from a ``key=value`` CLI argument.
+    :return: The coerced value, or the original string.
+    """
+    try:
+        return json.loads(value)
+    except (ValueError, TypeError):
+        return value
+
+
+def parse_params(raw_params: list[str] | None) -> dict[str, Any]:
+    """Parse ``key=value`` CLI params into a dict with typed values.
+
+    Each value is coerced via :func:`_coerce_param_value`.  Invalid entries
+    (missing ``=`` or an empty key) call :func:`print_error`, which exits.
+
+    :param raw_params: List of ``key=value`` strings (or ``None``).
+    :return: Mapping of param name to coerced value.
+    """
+    params: dict[str, Any] = {}
+    for raw in raw_params or []:
+        if not raw or "=" not in raw:
+            print_error(f"Invalid param {raw!r}: expected key=value format")
+        k, v = raw.split("=", 1)
+        if not k:
+            print_error(f"Invalid param {raw!r}: key cannot be empty")
+        if k in params:
+            logger.warning("Duplicate CLI param '%s' — last value wins", k)
+        params[k] = _coerce_param_value(v)
+    return params
 
 
 def _build_cli_client() -> BlestaRequest:

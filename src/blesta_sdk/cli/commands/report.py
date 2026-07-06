@@ -51,14 +51,9 @@ def run(args: argparse.Namespace) -> None:
 
     :param args: Parsed CLI arguments.
     """
-    from blesta_sdk.cli.formatters import print_error, print_json
+    from blesta_sdk.cli.formatters import parse_params, print_error, print_json
 
-    extra_vars: dict[str, str] = {}
-    for raw in args.params or []:
-        if not raw or "=" not in raw:
-            print_error(f"Invalid param {raw!r}: expected key=value format")
-        k, v = raw.split("=", 1)
-        extra_vars[k] = v
+    extra_vars = parse_params(args.params)
 
     api = _build_cli_client()
 

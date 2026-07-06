@@ -42,9 +42,9 @@ def run(args: argparse.Namespace) -> None:
     :param args: Parsed CLI arguments.
     """
     from blesta_sdk.cli.formatters import print_json
-    from blesta_sdk.discovery.registry import BlestaDiscovery
+    from blesta_sdk.discovery.registry import _get_discovery
 
-    disco = BlestaDiscovery()
+    disco = _get_discovery()
     cmd = args.discover_cmd
 
     if cmd == "models":

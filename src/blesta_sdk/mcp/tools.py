@@ -182,9 +182,9 @@ def _list_models_handler(source: str | None = None) -> str:
     :param source: Filter by ``"core"`` or ``"plugin"``; ``None`` for all.
     :return: JSON-serialised list of model names.
     """
-    from blesta_sdk.discovery.registry import BlestaDiscovery
+    from blesta_sdk.discovery.registry import _get_discovery
 
-    disco = BlestaDiscovery()
+    disco = _get_discovery()
     models = disco.list_models(source=source)
     return json.dumps({"ok": True, "models": models})
 
@@ -195,9 +195,9 @@ def _list_methods_handler(model: str) -> str:
     :param model: Model name (e.g. ``"Clients"``).
     :return: JSON-serialised list of method names.
     """
-    from blesta_sdk.discovery.registry import BlestaDiscovery
+    from blesta_sdk.discovery.registry import _get_discovery
 
-    disco = BlestaDiscovery()
+    disco = _get_discovery()
     try:
         methods = disco.list_methods(model)
         return json.dumps({"ok": True, "model": model, "methods": methods})
@@ -212,9 +212,9 @@ def _get_method_spec_handler(model: str, method: str) -> str:
     :param method: Method name.
     :return: JSON-serialised :class:`~blesta_sdk.discovery.registry.MethodSpec`.
     """
-    from blesta_sdk.discovery.registry import BlestaDiscovery
+    from blesta_sdk.discovery.registry import _get_discovery
 
-    disco = BlestaDiscovery()
+    disco = _get_discovery()
     try:
         spec = disco.get_method_spec(model, method)
         return json.dumps(
@@ -241,9 +241,9 @@ def _capabilities_report_handler(output_format: str = "markdown") -> str:
     :param output_format: ``"markdown"`` or ``"json"``.
     :return: Report string.
     """
-    from blesta_sdk.discovery.registry import BlestaDiscovery
+    from blesta_sdk.discovery.registry import _get_discovery
 
-    disco = BlestaDiscovery()
+    disco = _get_discovery()
     report = disco.generate_capabilities_report(output_format=output_format)  # type: ignore[arg-type]
     return report
 

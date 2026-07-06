@@ -52,9 +52,9 @@ def _models_handler() -> str:
     """
     import json
 
-    from blesta_sdk.discovery.registry import BlestaDiscovery
+    from blesta_sdk.discovery.registry import _get_discovery
 
-    disco = BlestaDiscovery()
+    disco = _get_discovery()
     return json.dumps(disco.list_models())
 
 
@@ -66,9 +66,9 @@ def _model_handler(model: str) -> str:
     """
     import json
 
-    from blesta_sdk.discovery.registry import BlestaDiscovery
+    from blesta_sdk.discovery.registry import _get_discovery
 
-    disco = BlestaDiscovery()
+    disco = _get_discovery()
     try:
         return json.dumps({"model": model, "methods": disco.list_methods(model)})
     except KeyError:
@@ -84,9 +84,9 @@ def _method_handler(model: str, method: str) -> str:
     """
     import json
 
-    from blesta_sdk.discovery.registry import BlestaDiscovery
+    from blesta_sdk.discovery.registry import _get_discovery
 
-    disco = BlestaDiscovery()
+    disco = _get_discovery()
     try:
         spec = disco.get_method_spec(model, method)
         return json.dumps(
@@ -108,9 +108,9 @@ def _capabilities_markdown_handler() -> str:
 
     :return: Markdown string.
     """
-    from blesta_sdk.discovery.registry import BlestaDiscovery
+    from blesta_sdk.discovery.registry import _get_discovery
 
-    return BlestaDiscovery().generate_capabilities_report("markdown")
+    return _get_discovery().generate_capabilities_report("markdown")
 
 
 def _capabilities_json_handler() -> str:
@@ -118,9 +118,9 @@ def _capabilities_json_handler() -> str:
 
     :return: JSON string.
     """
-    from blesta_sdk.discovery.registry import BlestaDiscovery
+    from blesta_sdk.discovery.registry import _get_discovery
 
-    return BlestaDiscovery().generate_capabilities_report("json")
+    return _get_discovery().generate_capabilities_report("json")
 
 
 # ---------------------------------------------------------------------------

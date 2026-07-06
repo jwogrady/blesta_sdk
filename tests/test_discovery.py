@@ -692,3 +692,20 @@ def test_methods_not_dict(tmp_path, caplog):
     assert "Broken" not in models
     assert "Invoices" in models
     assert any("methods for Broken must be a dict" in m for m in caplog.messages)
+
+
+def test_is_loaded_and_ensure_loaded(tmp_path):
+    """ensure_loaded() parses lazily and is_loaded reflects state (#103)."""
+    core_path = tmp_path / "core.json"
+    plugin_path = tmp_path / "plugin.json"
+    core_path.write_text(json.dumps(CORE_SCHEMA))
+    plugin_path.write_text(json.dumps(PLUGIN_SCHEMA))
+
+    disco = BlestaDiscovery(core_schema_path=core_path, plugin_schema_path=plugin_path)
+    assert disco.is_loaded is False
+    disco.ensure_loaded()
+    assert disco.is_loaded is True
+    # Idempotent — a second call is a no-op and stays loaded.
+    disco.ensure_loaded()
+    assert disco.is_loaded is True
+    assert "Clients" in disco.list_models()

@@ -123,6 +123,29 @@ def test_all_required_prompts_registered():
 
 
 # ---------------------------------------------------------------------------
+# Real FastMCP boot (requires the mcp package; skipped where it is absent)
+# ---------------------------------------------------------------------------
+
+
+async def test_build_server_boots_with_real_fastmcp():
+    """Construct the real server to catch startup/signature regressions.
+
+    The other MCP tests mock the ``mcp`` module, so they never exercise the real
+    ``FastMCP`` constructor — which is why an unsupported ``version=`` kwarg once
+    shipped and broke ``blesta-mcp`` on boot with no failing test. This builds the
+    actual server (registering all tools, resources, and prompts) and verifies the
+    expected tools are present.
+    """
+    pytest.importorskip("mcp")
+    from blesta_sdk.mcp.server import _build_server
+
+    server = _build_server()
+    tools = await server.list_tools()
+    names = {tool.name for tool in tools}
+    assert names >= _REQUIRED_TOOLS, f"Missing tools: {_REQUIRED_TOOLS - names}"
+
+
+# ---------------------------------------------------------------------------
 # Tool handler unit tests (no mcp required)
 # ---------------------------------------------------------------------------
 
@@ -346,6 +369,21 @@ def test_capabilities_report_handler_json():
     assert isinstance(data, list)
 
 
+def test_discovery_handlers_use_cached_singleton():
+    """Discovery handlers must reuse the lru-cached discovery (#100), not build a
+    fresh BlestaDiscovery and reparse the 1.3MB schema on every call."""
+    from blesta_sdk.discovery import registry
+    from blesta_sdk.mcp import tools
+
+    with patch.object(registry, "_get_discovery", wraps=registry._get_discovery) as spy:
+        tools._list_models_handler()
+        tools._list_methods_handler("Clients")
+        tools._get_method_spec_handler("Clients", "getList")
+    assert spy.call_count == 3
+    # The cache returns the same instance rather than reparsing.
+    assert registry._get_discovery() is registry._get_discovery()
+
+
 # ---------------------------------------------------------------------------
 # Resource handler unit tests
 # ---------------------------------------------------------------------------
@@ -546,6 +584,28 @@ def test_build_client_returns_blesta_request():
     from blesta_sdk.core.client import BlestaRequest
 
     assert isinstance(client, BlestaRequest)
+
+
+def test_build_client_caches_per_config():
+    """Repeated calls with the same config reuse one client/session (#101)."""
+    from blesta_sdk.mcp import schemas
+
+    schemas._reset_client_cache()
+    with patch.dict(os.environ, _CREDS):
+        first = schemas._build_client()
+        second = schemas._build_client()
+    assert first is second
+
+
+def test_build_client_kwargs_bypass_cache():
+    """Calls passing extra kwargs are not cached (may vary per call)."""
+    from blesta_sdk.mcp import schemas
+
+    schemas._reset_client_cache()
+    with patch.dict(os.environ, _CREDS):
+        a = schemas._build_client(timeout=5)
+        b = schemas._build_client(timeout=5)
+    assert a is not b
 
 
 def test_build_client_respects_auth_method():
