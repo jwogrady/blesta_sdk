@@ -11,6 +11,16 @@ from typing import Any
 
 from blesta_sdk.core.client import BlestaRequest
 
+#: Cache of clients keyed by resolved configuration. The MCP server is
+#: long-lived and handles many tool calls; reusing one client per config keeps
+#: HTTP connection pooling alive instead of discarding a Session per call.
+_CLIENT_CACHE: dict[tuple[str, str, str, str, bool], BlestaRequest] = {}
+
+
+def _reset_client_cache() -> None:
+    """Clear the cached clients. Primarily for tests."""
+    _CLIENT_CACHE.clear()
+
 
 def _creds_from_env() -> tuple[str, str, str]:
     """Read API credentials from environment variables.
@@ -33,7 +43,12 @@ def _creds_from_env() -> tuple[str, str, str]:
 
 
 def _build_client(**kwargs: Any) -> Any:
-    """Create a :class:`~blesta_sdk.core.client.BlestaRequest` from env creds.
+    """Return a :class:`~blesta_sdk.core.client.BlestaRequest` from env creds.
+
+    Clients are cached per resolved configuration so repeated MCP tool calls
+    reuse one client (and its pooled HTTP session) rather than opening a new
+    connection each time. Calls that pass extra *kwargs* are never cached, since
+    those may vary per call.
 
     :param kwargs: Extra kwargs forwarded to :class:`BlestaRequest`.
     :return: Configured client instance.
@@ -46,11 +61,24 @@ def _build_client(**kwargs: Any) -> Any:
         "yes",
         "on",
     }
-    return BlestaRequest(
-        url,
-        user,
-        key,
-        auth_method=auth_method,
-        allow_http=allow_http,
-        **kwargs,
-    )
+    if kwargs:
+        return BlestaRequest(
+            url,
+            user,
+            key,
+            auth_method=auth_method,
+            allow_http=allow_http,
+            **kwargs,
+        )
+    cache_key = (url, user, key, auth_method, allow_http)
+    client = _CLIENT_CACHE.get(cache_key)
+    if client is None:
+        client = BlestaRequest(
+            url,
+            user,
+            key,
+            auth_method=auth_method,
+            allow_http=allow_http,
+        )
+        _CLIENT_CACHE[cache_key] = client
+    return client

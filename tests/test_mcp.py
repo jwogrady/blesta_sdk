@@ -586,6 +586,28 @@ def test_build_client_returns_blesta_request():
     assert isinstance(client, BlestaRequest)
 
 
+def test_build_client_caches_per_config():
+    """Repeated calls with the same config reuse one client/session (#101)."""
+    from blesta_sdk.mcp import schemas
+
+    schemas._reset_client_cache()
+    with patch.dict(os.environ, _CREDS):
+        first = schemas._build_client()
+        second = schemas._build_client()
+    assert first is second
+
+
+def test_build_client_kwargs_bypass_cache():
+    """Calls passing extra kwargs are not cached (may vary per call)."""
+    from blesta_sdk.mcp import schemas
+
+    schemas._reset_client_cache()
+    with patch.dict(os.environ, _CREDS):
+        a = schemas._build_client(timeout=5)
+        b = schemas._build_client(timeout=5)
+    assert a is not b
+
+
 def test_build_client_respects_auth_method():
     """_build_client passes BLESTA_AUTH_METHOD to BlestaRequest."""
     from blesta_sdk.mcp.schemas import _build_client
