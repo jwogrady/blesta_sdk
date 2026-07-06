@@ -369,6 +369,21 @@ def test_capabilities_report_handler_json():
     assert isinstance(data, list)
 
 
+def test_discovery_handlers_use_cached_singleton():
+    """Discovery handlers must reuse the lru-cached discovery (#100), not build a
+    fresh BlestaDiscovery and reparse the 1.3MB schema on every call."""
+    from blesta_sdk.discovery import registry
+    from blesta_sdk.mcp import tools
+
+    with patch.object(registry, "_get_discovery", wraps=registry._get_discovery) as spy:
+        tools._list_models_handler()
+        tools._list_methods_handler("Clients")
+        tools._get_method_spec_handler("Clients", "getList")
+    assert spy.call_count == 3
+    # The cache returns the same instance rather than reparsing.
+    assert registry._get_discovery() is registry._get_discovery()
+
+
 # ---------------------------------------------------------------------------
 # Resource handler unit tests
 # ---------------------------------------------------------------------------
