@@ -46,8 +46,8 @@ class PaginationState:
         self.collected: list[Any] | None = [] if on_error == "raise" else None
         self._max_pages = max_pages
         self._on_error = on_error
-        self._prev_data: Any = None
-        self._prev_data_set: bool = False
+        self._prev_hash: int = 0
+        self._prev_hash_set: bool = False
         self._repeat_count = 0
         # Rolling window of recent page-data hashes for alternating-loop detection.
         self._page_hash_window: list[int] = []
@@ -129,8 +129,17 @@ class PaginationState:
         if data is None or data == [] or data == {}:
             return True
 
+        # Hash the page once and reuse it for both stuck-page checks. This
+        # replaces a full-payload ``==`` compare plus a separate ``str()``+hash
+        # (two O(page-size) passes) with one, and stores only the int hash
+        # rather than retaining the entire previous page in memory.
+        try:
+            page_hash = hash(str(data))
+        except Exception:
+            page_hash = id(data)
+
         # --- Consecutive identical-page detection (all types) ---
-        if self._prev_data_set and data == self._prev_data:
+        if self._prev_hash_set and page_hash == self._prev_hash:
             self._repeat_count += 1
             if self._repeat_count >= _REPEAT_THRESHOLD:
                 return self._raise_or_stop(
@@ -139,8 +148,8 @@ class PaginationState:
                 )
         else:
             self._repeat_count = 0
-        self._prev_data = data
-        self._prev_data_set = True
+        self._prev_hash = page_hash
+        self._prev_hash_set = True
 
         if not isinstance(data, list):
             # Non-list responses are terminal (caller yields once and returns).
@@ -148,13 +157,9 @@ class PaginationState:
             return False
 
         # --- Alternating-page loop detection (rolling window, lists only) ---
-        # Hash the page content and keep the last _WINDOW_SIZE hashes.
-        # If the window is full and contains only two distinct values
-        # that alternate perfectly, the pagination is stuck in a cycle.
-        try:
-            page_hash = hash(str(data))
-        except Exception:
-            page_hash = id(data)
+        # Keep the last _WINDOW_SIZE page hashes. If the window is full and
+        # contains only two distinct values that alternate perfectly, the
+        # pagination is stuck in a cycle.
         self._page_hash_window.append(page_hash)
         if len(self._page_hash_window) > _WINDOW_SIZE:
             self._page_hash_window.pop(0)
