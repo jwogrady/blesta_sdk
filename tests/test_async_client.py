@@ -575,6 +575,33 @@ async def test_async_get_all_fast_concurrency_not_capped_by_batch_size():
     assert peak <= 5  # bounded by max_concurrency
 
 
+# --- discovery parse offload (#103) ---
+
+
+async def test_resolve_discovery_offloads_parse_once(async_api):
+    """The one-time schema parse runs in a worker thread, not on the loop (#103).
+
+    Only the first call offloads; once loaded, the cheap is_loaded check skips
+    the thread hop.
+    """
+    from blesta_sdk.discovery.registry import BlestaDiscovery
+
+    disco = BlestaDiscovery()
+    async_api._discovery = disco
+    assert disco.is_loaded is False
+
+    real_to_thread = asyncio.to_thread
+    with patch(
+        "blesta_sdk.core.async_client.asyncio.to_thread", wraps=real_to_thread
+    ) as spy:
+        first = await async_api._resolve_discovery()
+        second = await async_api._resolve_discovery()
+
+    assert first is disco and second is disco
+    assert disco.is_loaded is True
+    spy.assert_called_once()  # only the first call offloads the parse
+
+
 # --- close() ---
 
 

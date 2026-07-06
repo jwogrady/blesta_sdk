@@ -165,6 +165,19 @@ class AsyncBlestaRequest:
 
         return _get_discovery()
 
+    async def _resolve_discovery(self) -> Any:
+        """Return the discovery instance with its schema parsed.
+
+        The bundled schema is ~1.3 MB; parsing it synchronously on first use
+        would block the event loop. Offload that one-time parse to a worker
+        thread so concurrent tasks keep making progress. Subsequent calls skip
+        the thread hop via the cheap ``is_loaded`` check.
+        """
+        disco = self._get_discovery()
+        if not disco.is_loaded:
+            await asyncio.to_thread(disco.ensure_loaded)
+        return disco
+
     async def get(
         self, model: str, method: str, args: dict[str, Any] | None = None
     ) -> BlestaResponse:
@@ -852,7 +865,7 @@ class AsyncBlestaRequest:
             from blesta_sdk.discovery.registry import _infer_http_method
 
             _sentinel = "_UNRESOLVED_"
-            disco = self._get_discovery()
+            disco = await self._resolve_discovery()
             action = disco.resolve_http_method(model, method, default=_sentinel)
             if action == _sentinel:
                 inferred = _infer_http_method(method)
@@ -892,7 +905,7 @@ class AsyncBlestaRequest:
         :raises ValueError: When the schema indicates the method is not GET.
         """
         _sentinel = "_UNRESOLVED_"
-        disco = self._get_discovery()
+        disco = await self._resolve_discovery()
         http_method = disco.resolve_http_method(model, method, default=_sentinel)
         if http_method == _sentinel:
             logger.debug(
@@ -926,7 +939,7 @@ class AsyncBlestaRequest:
         :param args: Query parameters.
         :return: Record count, or ``0`` on errors.
         """
-        disco = self._get_discovery()
+        disco = await self._resolve_discovery()
         count_method = disco.suggest_pagination_pair(model, list_method)
         if count_method is None:
             count_method = list_method + "Count"
