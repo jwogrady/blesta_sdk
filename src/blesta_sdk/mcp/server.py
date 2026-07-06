@@ -62,7 +62,6 @@ def _build_server() -> object:
 
     mcp_server = FastMCP(
         _SERVER_NAME,
-        version=_SERVER_VERSION,
         instructions=_INSTRUCTIONS,
     )
 
