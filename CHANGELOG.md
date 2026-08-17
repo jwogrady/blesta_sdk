@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Support Manager plugin schema coverage** (#108) — the bundled plugin schema now
+  carries all seven documented Support Manager models, taking plugin coverage from
+  8 models / 97 methods to **15 models / 248 methods**:
+  `support_manager.support_manager_tickets`, `…_departments`, `…_staff`, `…_responses`,
+  `…_kb_articles`, `…_kb_categories`, `…_settings`. `BlestaDiscovery` lists them,
+  resolves their HTTP verbs, and registers the tickets `getList`/`getListCount`
+  pagination pair, so `get_all()` and `count_for()` work against tickets.
+- **A second upstream for the plugin extractor.** Support Manager ships inside the
+  Blesta core distribution and has no public `blesta/plugin-*` repository, so it is
+  extracted from Blesta's generated class docs at <https://source-docs.blesta.com/>
+  (`SOURCE_DOCS_REGISTRY`) rather than from PHP docblocks on GitHub.
+- **Per-model provenance.** Every plugin model now records `"source_type"` —
+  `github_php_docblocks` or `phpdocumentor_html` — alongside its existing `"source"`
+  URL, so a consumer can tell where a parameter list was read from.
+- **`docs/support-manager-coverage.md`** — the covered ticket surface, and six explicit
+  gaps in what upstream documents, most importantly that ticket/service linkage is
+  writable (`add`/`edit` take a `service_id` var) but **has no documented read filter**,
+  and that the ticket object's own field list is not documented anywhere. No schema
+  method was invented to fill a gap; each absence is asserted by a test that will go red
+  if Blesta starts documenting it.
+
+### Changed
+
+- **`metadata.source_type` in `blesta_plugin_schema.json` is now `"mixed"`** rather than
+  `"github_php_docblocks"`, because two upstreams contribute. It remains a string; a new
+  `metadata.source_types` lists them. Per-model provenance is on each model's
+  `"source_type"`. **If you read `metadata.source_type` from the plugin schema, read
+  `metadata.source_types` or the per-model key instead.** No public Python API changed.
+- **`webhooks.webhooks_events.getMethods`** picks up an upstream `unserialize` →
+  `safe_unserialize` change that the shipped copy of the schema had been missing.
+
 ### Fixed
 
 - **`blesta call` exit code** — the `call` subcommand now exits with code 1 on non-200
