@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Schema extractor invocation** — the documented way to run both extraction tools
+  could never have worked. `python tools/extract_schema.py` puts `tools/` on
+  `sys.path` instead of the repo root, so the tools' own `from tools._classify import …`
+  raised `ModuleNotFoundError: No module named 'tools'`. The working form is
+  `python -m tools.extract_schema` / `python -m tools.extract_plugin_schema`, now used
+  in both docstrings, in `CLAUDE.md`, and in the weekly **Schema Refresh** workflow —
+  which had been running the broken form, so the automated refresh had never succeeded.
+  `TestDocumentedInvocation` in `tests/test_schema.py` now runs each tool as documented
+  and greps those four files for the form that cannot work.
+- **`--output` help text** on both extractors named `schemas/…` as the default; the
+  actual default is the canonical `src/blesta_sdk/schemas/…`.
 - **`blesta call` exit code** — the `call` subcommand now exits with code 1 on non-200
   HTTP responses, matching the documented behaviour in `CLI_USAGE.md` and `README.md`.
   Previously only the legacy `--model/--method` mode exited non-zero on HTTP errors.
