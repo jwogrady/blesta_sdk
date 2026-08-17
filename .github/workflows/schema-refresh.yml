@@ -26,11 +26,13 @@ jobs:
       - name: Install dependencies
         run: uv sync
 
+      # Module form (-m), not a file path: the extractors import tools._classify,
+      # which is unimportable when tools/ rather than the repo root is on sys.path.
       - name: Run core schema extractor
-        run: uv run python tools/extract_schema.py
+        run: uv run python -m tools.extract_schema
 
       - name: Run plugin schema extractor
-        run: uv run python tools/extract_plugin_schema.py
+        run: uv run python -m tools.extract_plugin_schema
 
       - name: Open PR if schemas changed
         uses: peter-evans/create-pull-request@v6

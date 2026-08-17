@@ -28,8 +28,8 @@ uv run black src/ tests/ tools/                                  # Format code
 uv run ruff check src/ tests/ tools/                             # Lint
 uv build                                                         # Build package
 uv run pytest benchmarks/ -v --benchmark-only                   # Run benchmarks (excluded from CI)
-uv run python tools/extract_schema.py                           # Re-extract core schemas → src/blesta_sdk/schemas/
-uv run python tools/extract_plugin_schema.py                    # Re-extract plugin schemas → src/blesta_sdk/schemas/
+uv run python -m tools.extract_schema                           # Re-extract core schemas → src/blesta_sdk/schemas/
+uv run python -m tools.extract_plugin_schema                    # Re-extract plugin schemas → src/blesta_sdk/schemas/
 ```
 
 ## Project Structure

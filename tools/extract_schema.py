@@ -4,11 +4,16 @@ Parses the phpDocumentor-generated HTML at https://source-docs.blesta.com/
 to produce a machine-readable catalog of all API models, methods, parameters,
 and return types.
 
+Must be run as a module, not as a file path. This module imports
+``tools._classify``, and invoking the file directly puts ``tools/`` itself on
+``sys.path`` instead of the repo root, so that form fails with
+``ModuleNotFoundError: No module named 'tools'``.
+
 Usage::
 
-    uv run python tools/extract_schema.py
-    uv run python tools/extract_schema.py --output schemas/custom.json
-    uv run python tools/extract_schema.py --dry-run
+    uv run python -m tools.extract_schema
+    uv run python -m tools.extract_schema --output schemas/custom.json
+    uv run python -m tools.extract_schema --dry-run
 """
 
 from __future__ import annotations
@@ -423,7 +428,10 @@ def main() -> None:
         "--output",
         type=Path,
         default=DEFAULT_OUTPUT,
-        help="Output JSON file path (default: schemas/blesta_api_schema.json)",
+        help=(
+            "Output JSON file path "
+            "(default: src/blesta_sdk/schemas/blesta_api_schema.json)"
+        ),
     )
     parser.add_argument(
         "--dry-run",
