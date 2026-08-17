@@ -9,6 +9,9 @@ Two groups:
 from __future__ import annotations
 
 import json
+import re
+import subprocess
+import sys
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -861,3 +864,59 @@ class TestMainCLI:
         data = json.loads(output_file.read_text())
         assert "metadata" in data
         assert "models" in data
+
+
+# ---------------------------------------------------------------------------
+# Documented invocation
+# ---------------------------------------------------------------------------
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+EXTRACTOR_MODULES = ("tools.extract_schema", "tools.extract_plugin_schema")
+
+# Files that tell a human (or CI) how to run the extractors. Kept as a list so
+# a new reference has to be added here deliberately rather than drifting.
+INVOCATION_DOC_PATHS = (
+    "CLAUDE.md",
+    "tools/extract_schema.py",
+    "tools/extract_plugin_schema.py",
+    ".github/workflows/schema-refresh.yml",
+)
+
+
+class TestDocumentedInvocation:
+    """The extractors must be runnable exactly as documented.
+
+    Both tools import ``tools._classify``. Running them by file path
+    (``python tools/extract_schema.py``) puts ``tools/`` on ``sys.path``
+    instead of the repo root, so that form dies with ``ModuleNotFoundError:
+    No module named 'tools'``. It was documented in three places and in the
+    weekly Schema Refresh workflow, so nothing that ran was the thing that
+    was written down.
+    """
+
+    @pytest.mark.parametrize("module", EXTRACTOR_MODULES)
+    def test_module_form_runs(self, module):
+        result = subprocess.run(
+            [sys.executable, "-m", module, "--help"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, (
+            f"'python -m {module} --help' failed with "
+            f"{result.returncode}:\n{result.stderr}"
+        )
+        assert "--output" in result.stdout
+
+    @pytest.mark.parametrize("doc_path", INVOCATION_DOC_PATHS)
+    def test_no_file_path_invocation_documented(self, doc_path):
+        text = (REPO_ROOT / doc_path).read_text(encoding="utf-8")
+        offenders = [
+            line.strip()
+            for line in text.splitlines()
+            if re.search(r"python\s+tools/extract_\w+\.py", line)
+        ]
+        assert not offenders, (
+            f"{doc_path} documents an invocation that cannot work: {offenders}. "
+            f"Use 'python -m tools.extract_schema' instead."
+        )
