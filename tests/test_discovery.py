@@ -709,3 +709,77 @@ def test_is_loaded_and_ensure_loaded(tmp_path):
     disco.ensure_loaded()
     assert disco.is_loaded is True
     assert "Clients" in disco.list_models()
+
+
+# ---------------------------------------------------------------------------
+# Support Manager discovery against the bundled schema (issue #108)
+# ---------------------------------------------------------------------------
+
+SUPPORT_TICKETS = "support_manager.support_manager_tickets"
+
+
+class TestBundledSupportManagerDiscovery:
+    """What a consumer actually calls to extract tickets.
+
+    These go through the bundled schema rather than a fixture, because the
+    fixture cannot tell you whether the shipped file carries Support Manager.
+    """
+
+    @pytest.fixture(scope="class")
+    def bundled(self):
+        return BlestaDiscovery()
+
+    def test_ticket_model_is_a_plugin_model(self, bundled):
+        assert SUPPORT_TICKETS in bundled.list_models(source="plugin")
+        assert SUPPORT_TICKETS in bundled.list_models()
+
+    def test_all_support_manager_models_listed(self, bundled):
+        found = [
+            m for m in bundled.list_models("plugin") if m.startswith("support_manager.")
+        ]
+        assert len(found) == 7, found
+
+    def test_ticket_read_methods_listed(self, bundled):
+        methods = bundled.list_methods(SUPPORT_TICKETS)
+        for name in ("get", "getList", "getListCount", "getTicketByCode"):
+            assert name in methods
+
+    def test_ticket_list_resolves_to_get(self, bundled):
+        # POST is the fallback default; resolving to GET proves the schema
+        # answered rather than the default winning.
+        assert bundled.resolve_http_method(SUPPORT_TICKETS, "getList") == "GET"
+        assert bundled.resolve_http_method(SUPPORT_TICKETS, "get") == "GET"
+        assert bundled.resolve_http_method(SUPPORT_TICKETS, "add") == "POST"
+        assert bundled.resolve_http_method(SUPPORT_TICKETS, "edit") == "PUT"
+        assert bundled.resolve_http_method(SUPPORT_TICKETS, "delete") == "DELETE"
+
+    def test_ticket_list_spec_supports_client_filtering(self, bundled):
+        spec = bundled.get_method_spec(SUPPORT_TICKETS, "getList")
+        assert spec.source == "plugin"
+        assert spec.http_method == "GET"
+        assert spec.category == "api"
+        assert spec.description
+        assert spec.return_type
+        assert spec.signature
+        names = [p["name"] for p in spec.params]
+        assert "client_id" in names
+        assert "status" in names
+
+    def test_ticket_pagination_pair_available(self, bundled):
+        assert bundled.suggest_pagination_pair(SUPPORT_TICKETS) == "getListCount"
+
+    def test_capabilities_report_names_support_manager(self, bundled):
+        report = bundled.generate_capabilities_report()
+        assert f"## {SUPPORT_TICKETS} (plugin)" in report
+
+    def test_ai_index_includes_ticket_methods(self, bundled, tmp_path):
+        path = tmp_path / "index.jsonl"
+        bundled.generate_ai_index(path)
+        entries = [json.loads(line) for line in path.read_text().splitlines()]
+        ticket_methods = {e["method"] for e in entries if e["model"] == SUPPORT_TICKETS}
+        assert "getList" in ticket_methods
+        assert all(
+            e["source"] == "plugin"
+            for e in entries
+            if e["model"].startswith("support_manager.")
+        )
