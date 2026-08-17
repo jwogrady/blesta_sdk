@@ -1,8 +1,15 @@
-"""Extract a structured JSON schema from Blesta plugin PHP source on GitHub.
+"""Extract a structured JSON schema for Blesta plugin models.
 
-Parses phpDoc-annotated PHP model files from public ``blesta/plugin-*``
-repositories to produce a machine-readable catalog of plugin API methods,
-parameters, and return types.
+Two upstream sources, because not every plugin is published as source:
+
+* ``github_php_docblocks`` — phpDoc-annotated PHP model files from the public
+  ``blesta/plugin-*`` repositories (:data:`PLUGIN_REGISTRY`).
+* ``phpdocumentor_html`` — the generated class docs at
+  https://source-docs.blesta.com/ (:data:`SOURCE_DOCS_REGISTRY`), for plugins
+  that ship inside the Blesta core distribution and so have no public repo.
+
+Every model records which of the two it came from in its ``source_type`` key,
+so a consumer can tell where a parameter list was read from.
 
 Usage::
 
@@ -23,11 +30,13 @@ from pathlib import Path
 from typing import Any
 
 from tools._classify import INFERENCE_SOURCE, classify_category, infer_http_method
+from tools.extract_schema import parse_class_page
 
 logger = logging.getLogger(__name__)
 
 RAW_GITHUB_BASE = "https://raw.githubusercontent.com/blesta"
 GITHUB_BLOB_BASE = "https://github.com/blesta"
+SOURCE_DOCS_BASE = "https://source-docs.blesta.com"
 DEFAULT_OUTPUT = (
     Path(__file__).resolve().parent.parent
     / "src"
@@ -37,6 +46,9 @@ DEFAULT_OUTPUT = (
 )
 SCHEMA_VERSION = "2.0.0"
 
+GITHUB_SOURCE_TYPE = "github_php_docblocks"
+SOURCE_DOCS_SOURCE_TYPE = "phpdocumentor_html"
+
 # Plugin name -> list of model file basenames (without .php)
 PLUGIN_REGISTRY: dict[str, list[str]] = {
     "cms": ["cms_pages"],
@@ -44,6 +56,27 @@ PLUGIN_REGISTRY: dict[str, list[str]] = {
     "extension_generator": ["extension_generator_extensions"],
     "softaculous": ["softaculous_queued_services"],
     "webhooks": ["webhooks_events", "webhooks_logs", "webhooks_webhooks"],
+}
+
+# Plugins that ship inside the Blesta core distribution and therefore have no
+# public ``blesta/plugin-*`` repository for PLUGIN_REGISTRY to read — checked:
+# ``blesta/plugin-support_manager`` 404s and does not appear in the org's repo
+# listing. Their models are documented in the generated class docs instead, and
+# those pages record the model file each class lives in, which is what gives the
+# API path: /support_manager.support_manager_tickets/getList.json
+#
+# Plugin directory -> list of (model file basename, documented class name).
+# The basename, not the class name, is the API path segment.
+SOURCE_DOCS_REGISTRY: dict[str, list[tuple[str, str]]] = {
+    "support_manager": [
+        ("support_manager_departments", "SupportManagerDepartments"),
+        ("support_manager_kb_articles", "SupportManagerKbArticles"),
+        ("support_manager_kb_categories", "SupportManagerKbCategories"),
+        ("support_manager_responses", "SupportManagerResponses"),
+        ("support_manager_settings", "SupportManagerSettings"),
+        ("support_manager_staff", "SupportManagerStaff"),
+        ("support_manager_tickets", "SupportManagerTickets"),
+    ],
 }
 
 
@@ -488,19 +521,43 @@ def _detect_pagination(methods: dict[str, Any]) -> dict[str, str]:
     return dict(sorted(pagination.items()))
 
 
-def build_plugin_schema(fetch_fn: Any) -> dict[str, Any]:
-    """Build the plugin schema by fetching and parsing all registered models.
+def _add_model(
+    models: dict[str, Any],
+    model_key: str,
+    methods: dict[str, Any],
+    source_url: str,
+    source_type: str,
+) -> None:
+    """Register one parsed model in the schema under construction.
+
+    :param models: The accumulating model dict, mutated in place.
+    :param model_key: ``plugin.model`` key — also the API path segment.
+    :param methods: Parsed methods for the model.
+    :param source_url: Human-readable URL the docs were read from.
+    :param source_type: ``github_php_docblocks`` or ``phpdocumentor_html``.
+    """
+    model_entry: dict[str, Any] = {
+        "methods": methods,
+        "source": source_url,
+        "source_type": source_type,
+    }
+    pagination = _detect_pagination(methods)
+    if pagination:
+        model_entry["pagination"] = pagination
+    models[model_key] = model_entry
+    logger.info("  %s: %d methods (%s)", model_key, len(methods), source_type)
+
+
+def _collect_github_models(
+    fetch_fn: Any, models: dict[str, Any], plugins_found: set[str]
+) -> None:
+    """Fetch and parse every model in :data:`PLUGIN_REGISTRY`.
 
     :param fetch_fn: Callable that takes a URL and returns text content.
-    :return: Complete plugin schema dict.
+    :param models: The accumulating model dict, mutated in place.
+    :param plugins_found: Set of plugin names that yielded models, mutated.
     """
-    models: dict[str, Any] = {}
-    total_methods = 0
-    plugins_found: list[str] = []
-
     for plugin_name, model_names in sorted(PLUGIN_REGISTRY.items()):
-        plugin_had_models = False
-
         for model_name in model_names:
             raw_url = (
                 f"{RAW_GITHUB_BASE}/plugin-{plugin_name}"
@@ -513,27 +570,59 @@ def build_plugin_schema(fetch_fn: Any) -> dict[str, Any]:
             model_key = f"{plugin_name}.{model_name}"
 
             try:
-                php_source = fetch_fn(raw_url)
-                methods = parse_php_file(php_source)
+                methods = parse_php_file(fetch_fn(raw_url))
                 if methods:
-                    model_entry: dict[str, Any] = {
-                        "methods": methods,
-                        "source": source_url,
-                    }
-                    pagination = _detect_pagination(methods)
-                    if pagination:
-                        model_entry["pagination"] = pagination
-                    models[model_key] = model_entry
-                    total_methods += len(methods)
-                    plugin_had_models = True
-                    logger.info("  %s: %d methods", model_key, len(methods))
+                    _add_model(
+                        models, model_key, methods, source_url, GITHUB_SOURCE_TYPE
+                    )
+                    plugins_found.add(plugin_name)
                 else:
                     logger.warning("  %s: no public methods found, skipping", model_key)
             except Exception:
                 logger.warning("Failed to fetch/parse %s", model_key, exc_info=True)
 
-        if plugin_had_models:
-            plugins_found.append(plugin_name)
+
+def _collect_source_docs_models(
+    fetch_fn: Any, models: dict[str, Any], plugins_found: set[str]
+) -> None:
+    """Fetch and parse every model in :data:`SOURCE_DOCS_REGISTRY`.
+
+    :param fetch_fn: Callable that takes a URL and returns text content.
+    :param models: The accumulating model dict, mutated in place.
+    :param plugins_found: Set of plugin names that yielded models, mutated.
+    """
+    for plugin_name, entries in sorted(SOURCE_DOCS_REGISTRY.items()):
+        for model_name, class_name in entries:
+            source_url = f"{SOURCE_DOCS_BASE}/classes/{class_name}.html"
+            model_key = f"{plugin_name}.{model_name}"
+
+            try:
+                methods = parse_class_page(fetch_fn(source_url))
+                if methods:
+                    _add_model(
+                        models, model_key, methods, source_url, SOURCE_DOCS_SOURCE_TYPE
+                    )
+                    plugins_found.add(plugin_name)
+                else:
+                    logger.warning("  %s: no public methods found, skipping", model_key)
+            except Exception:
+                logger.warning("Failed to fetch/parse %s", model_key, exc_info=True)
+
+
+def build_plugin_schema(fetch_fn: Any) -> dict[str, Any]:
+    """Build the plugin schema by fetching and parsing all registered models.
+
+    :param fetch_fn: Callable that takes a URL and returns text content.
+    :return: Complete plugin schema dict.
+    """
+    models: dict[str, Any] = {}
+    plugins_found: set[str] = set()
+
+    _collect_github_models(fetch_fn, models, plugins_found)
+    _collect_source_docs_models(fetch_fn, models, plugins_found)
+
+    total_methods = sum(len(m["methods"]) for m in models.values())
+    source_types = sorted({m["source_type"] for m in models.values()})
 
     schema = {
         "metadata": {
@@ -551,7 +640,11 @@ def build_plugin_schema(fetch_fn: Any) -> dict[str, Any]:
             "model_count": len(models),
             "plugins": sorted(plugins_found),
             "schema_version": SCHEMA_VERSION,
-            "source_type": "github_php_docblocks",
+            # Per-model provenance lives on each model's "source_type". This
+            # stays a single string for consumers that already read it, and is
+            # "mixed" once more than one upstream contributed.
+            "source_type": source_types[0] if len(source_types) == 1 else "mixed",
+            "source_types": source_types,
             "total_methods": total_methods,
         },
         "models": dict(sorted(models.items())),
@@ -562,7 +655,10 @@ def build_plugin_schema(fetch_fn: Any) -> dict[str, Any]:
 def main() -> None:
     """CLI entry point for plugin schema extraction."""
     parser = argparse.ArgumentParser(
-        description="Extract Blesta plugin schema from GitHub PHP sources"
+        description=(
+            "Extract Blesta plugin schema from GitHub PHP sources and from the "
+            "generated source docs"
+        )
     )
     parser.add_argument(
         "--output",
