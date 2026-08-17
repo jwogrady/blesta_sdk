@@ -241,7 +241,7 @@ df = response.to_dataframe()
 
 ## API Discovery
 
-Introspect the bundled API schemas (63 core models, 8 plugin models):
+Introspect the bundled API schemas (63 core models, 15 plugin models):
 
 ```python
 from blesta_sdk import BlestaDiscovery, MethodSpec

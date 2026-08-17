@@ -49,8 +49,8 @@ uv run python tools/extract_plugin_schema.py                    # Re-extract plu
 - `src/blesta_sdk/cli/commands/` — CLI subcommands: `call.py`, `extract.py`, `report.py`, `discover.py`
 - `src/blesta_sdk/mcp/server.py` — MCP server entry point (registered as `blesta-mcp` via `blesta_sdk.mcp.server:main`)
 - `src/blesta_sdk/mcp/tools.py`, `resources.py`, `prompts.py` — MCP tool/resource/prompt registrations
-- `src/blesta_sdk/schemas/` — **canonical** bundled JSON schemas (core: 63 models, plugin: 8 models) used by `BlestaDiscovery`
-- `tools/` — schema extraction utilities (`extract_schema.py`, `extract_plugin_schema.py`, `_classify.py`); write to `src/blesta_sdk/schemas/` by default
+- `src/blesta_sdk/schemas/` — **canonical** bundled JSON schemas (core: 63 models, plugin: 15 models) used by `BlestaDiscovery`
+- `tools/` — schema extraction utilities (`extract_schema.py`, `extract_plugin_schema.py`, `_classify.py`); write to `src/blesta_sdk/schemas/` by default. The plugin extractor reads two upstreams: the public `blesta/plugin-*` repos, and Blesta's generated class docs for plugins (such as Support Manager) that ship inside core and have no repo
 - `tests/` — unit tests (mocked) + one live integration test (`test_credentials`)
 - `benchmarks/` — performance benchmarks (pytest-benchmark, not collected in CI)
 

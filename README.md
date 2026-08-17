@@ -12,7 +12,7 @@ service, and does not provide idempotency guarantees by itself.
 - Parses JSON and CSV responses; surfaces body-level Blesta errors (HTTP 200 can still mean failure)
 - Provides automatic pagination, batch extraction, and report helpers
 - Supports automatic retry with exponential backoff and jitter
-- Includes bundled API schema discovery (63 core models, 8 plugin models)
+- Includes bundled API schema discovery (63 core models, 15 plugin models)
 - Provides environment-keyed credential management (`dev` / `stage` / `live`)
 - Redacts sensitive fields from debug/log output via `get_last_request()`
 - Ships both sync (`BlestaRequest`) and async (`AsyncBlestaRequest`) clients
@@ -446,7 +446,7 @@ except BlestaRateLimitError as e:
 
 ## API Discovery
 
-The SDK bundles machine-readable schemas for all 63 core Blesta models and 8 plugin models. Use `BlestaDiscovery` to introspect the available API surface:
+The SDK bundles machine-readable schemas for all 63 core Blesta models and 15 plugin models (`cms`, `domains`, `extension_generator`, `softaculous`, `support_manager`, `webhooks`). Use `BlestaDiscovery` to introspect the available API surface:
 
 ```python
 from blesta_sdk import BlestaDiscovery
@@ -480,6 +480,31 @@ print(disco.generate_capabilities_report(output_format="markdown"))
 # Generate JSONL index for AI embeddings
 disco.generate_ai_index("blesta_api_index.jsonl")
 ```
+
+### Plugin models
+
+Plugin models are keyed and requested as `plugin.model` — the same dot notation Blesta's
+API uses in the URL path:
+
+```python
+disco.list_models(source="plugin")
+# ["cms.cms_pages", ..., "support_manager.support_manager_tickets", ...]
+
+# Support tickets for one client, paginated
+tickets = api.get_all(
+    "support_manager.support_manager_tickets",
+    "getList",
+    {"status": "not_closed", "client_id": 42},
+)
+```
+
+Each plugin model records where its documentation was read from in its `source_type`:
+`github_php_docblocks` for plugins published as `blesta/plugin-*` repositories, or
+`phpdocumentor_html` for plugins that ship inside the Blesta core distribution and are
+documented only in the generated class docs.
+
+Support Manager's coverage, including what the upstream API does **not** document, is
+recorded in [`docs/support-manager-coverage.md`](docs/support-manager-coverage.md).
 
 ## Async Client
 
