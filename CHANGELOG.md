@@ -48,6 +48,16 @@ from [Conventional Commits](https://www.conventionalcommits.org/).
 - **`blesta call` exit code** — the `call` subcommand now exits with code 1 on non-200
   HTTP responses, matching the documented behaviour in `CLI_USAGE.md` and `README.md`.
   Previously only the legacy `--model/--method` mode exited non-zero on HTTP errors.
+- **Schema extractors can no longer commit a near-empty schema from a green run** — both
+  `tools/extract_schema.py` and `tools/extract_plugin_schema.py` skipped every model they
+  could not fetch or parse with a warning, then wrote the output file and exited 0 however
+  few survived. Upstream restructuring (pages answering 200 with markup the parser no
+  longer matches) therefore produced a hollow schema from a passing scheduled refresh, and
+  the breakage surfaced downstream with nothing in the diff to blame. The extracted model
+  count is now an assertion: a run extracting zero models fails, as does one falling below
+  90% of the previous run's count, and nothing is written in either case. A models listing
+  page that parses to zero links also fails outright — that page can never legitimately be
+  empty. `--allow-shrink` accepts a drop that is a real upstream removal.
 
 ### Changed
 
