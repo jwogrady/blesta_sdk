@@ -14,6 +14,11 @@ from unittest.mock import Mock, patch
 
 import pytest
 
+from tools._floor import (
+    ExtractionFloorError,
+    enforce_model_floor,
+    previous_model_count,
+)
 from tools.extract_schema import (
     _detect_pagination,
     build_schema,
@@ -801,6 +806,222 @@ class TestParseClassPageEdgeCases:
         assert result == {}
 
 
+# ---------------------------------------------------------------------------
+# The extraction floor (issue #111)
+# ---------------------------------------------------------------------------
+
+RESTRUCTURED_MODEL_LIST_HTML = """
+<html><body>
+<main class="docs-shell">
+  <nav class="api-index">
+    <ul>
+      <li><a href="/reference/Clients">Clients</a></li>
+      <li><a href="/reference/Invoices">Invoices</a></li>
+    </ul>
+  </nav>
+</main>
+</body></html>
+"""
+
+UNRECOGNISED_CLASS_HTML = """
+<html><body>
+<main class="docs-shell">
+  <section class="api-member"><h2>get</h2><p>Fetches a record.</p></section>
+</main>
+</body></html>
+"""
+
+
+def _schema_file(path, model_count):
+    """Write a minimal previous-run schema so the floor has a baseline."""
+    path.write_text(
+        json.dumps(
+            {
+                "metadata": {"model_count": model_count},
+                "models": {f"Model{i}": {} for i in range(model_count)},
+            }
+        )
+    )
+    return path
+
+
+def _run_main(argv, class_html):
+    """Run extract_schema.main() with the network mocked out."""
+    from tools.extract_schema import main
+
+    call_count = 0
+
+    def get_side_effect(url, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        resp = Mock(text=MINIMAL_MODEL_LIST_HTML if call_count == 1 else class_html)
+        resp.raise_for_status = Mock()
+        return resp
+
+    mock_session = Mock()
+    mock_session.get.side_effect = get_side_effect
+    mock_session.headers = {}
+
+    with (
+        patch("sys.argv", ["extract_schema", *argv]),
+        patch("tools.extract_schema.time.sleep"),
+        patch("requests.Session", return_value=mock_session),
+    ):
+        main()
+
+
+class TestPreviousModelCount:
+    def test_missing_file(self, tmp_path):
+        assert previous_model_count(tmp_path / "nope.json") is None
+
+    def test_unparseable_file(self, tmp_path):
+        path = tmp_path / "bad.json"
+        path.write_text("not json {")
+        assert previous_model_count(path) is None
+
+    def test_no_metadata(self, tmp_path):
+        path = tmp_path / "empty.json"
+        path.write_text(json.dumps({"models": {}}))
+        assert previous_model_count(path) is None
+
+    def test_zero_count_is_no_baseline(self, tmp_path):
+        """A previously emptied schema must not become the floor to beat."""
+        path = _schema_file(tmp_path / "prev.json", 0)
+        assert previous_model_count(path) is None
+
+    def test_reads_count(self, tmp_path):
+        path = _schema_file(tmp_path / "prev.json", 63)
+        assert previous_model_count(path) == 63
+
+    def test_committed_schema(self):
+        """The real committed schema is a usable baseline."""
+        assert previous_model_count(SCHEMA_PATH) >= 60
+
+
+class TestEnforceModelFloor:
+    def test_zero_always_fails(self, tmp_path):
+        with pytest.raises(ExtractionFloorError) as exc:
+            enforce_model_floor(0, source="src", output=tmp_path / "out.json")
+        assert "Extracted 0 models" in str(exc.value)
+
+    def test_zero_fails_even_with_allow_shrink(self, tmp_path):
+        """--allow-shrink accepts a smaller schema, never an empty one."""
+        with pytest.raises(ExtractionFloorError):
+            enforce_model_floor(
+                0, source="src", output=tmp_path / "out.json", allow_shrink=True
+            )
+
+    def test_below_fraction_fails(self, tmp_path):
+        with pytest.raises(ExtractionFloorError) as exc:
+            enforce_model_floor(
+                20, source="src", output=tmp_path / "out.json", baseline=63
+            )
+        message = str(exc.value)
+        assert "below the floor of 57" in message
+        assert "--allow-shrink" in message
+
+    def test_at_fraction_passes(self, tmp_path):
+        enforce_model_floor(57, source="src", output=tmp_path / "out.json", baseline=63)
+
+    def test_small_drop_passes(self, tmp_path):
+        enforce_model_floor(62, source="src", output=tmp_path / "out.json", baseline=63)
+
+    def test_growth_passes(self, tmp_path):
+        enforce_model_floor(70, source="src", output=tmp_path / "out.json", baseline=63)
+
+    def test_no_baseline_only_floors_at_zero(self, tmp_path):
+        enforce_model_floor(
+            1, source="src", output=tmp_path / "out.json", baseline=None
+        )
+
+    def test_allow_shrink_accepts_real_removal(self, tmp_path):
+        enforce_model_floor(
+            20,
+            source="src",
+            output=tmp_path / "out.json",
+            baseline=63,
+            allow_shrink=True,
+        )
+
+    def test_message_names_an_action(self, tmp_path):
+        """An operator reading a red run must not have to open the source."""
+        with pytest.raises(ExtractionFloorError) as exc:
+            enforce_model_floor(0, source="src", output=tmp_path / "out.json")
+        assert "What to do:" in str(exc.value)
+
+
+class TestBuildSchemaRejectsEmptyModelList:
+    def test_restructured_listing_page_raises(self):
+        """A 200 whose markup parses to no models is a failure, not an empty run."""
+
+        def fetch_fn(url):  # pragma: no cover - must never be reached
+            raise AssertionError("no model page should be fetched")
+
+        with pytest.raises(ExtractionFloorError) as exc:
+            build_schema(RESTRUCTURED_MODEL_LIST_HTML, fetch_fn)
+        assert "zero model links" in str(exc.value)
+        assert "What to do:" in str(exc.value)
+
+    def test_empty_html_raises(self):
+        def fetch_fn(url):  # pragma: no cover - must never be reached
+            raise AssertionError("no model page should be fetched")
+
+        with pytest.raises(ExtractionFloorError):
+            build_schema("<html><body></body></html>", fetch_fn)
+
+
+class TestMainFloorExits:
+    def test_unrecognised_class_pages_exit_nonzero(self, tmp_path):
+        """Listing parses, every class page 200s with markup that yields nothing."""
+        output = _schema_file(tmp_path / "out.json", 63)
+
+        with pytest.raises(SystemExit) as exc:
+            _run_main(["--output", str(output)], UNRECOGNISED_CLASS_HTML)
+        assert exc.value.code == 1
+        # The last good schema survives.
+        assert json.loads(output.read_text())["metadata"]["model_count"] == 63
+
+    def test_zero_models_exit_nonzero_without_previous_schema(self, tmp_path):
+        output = tmp_path / "out.json"
+
+        with pytest.raises(SystemExit) as exc:
+            _run_main(["--output", str(output)], UNRECOGNISED_CLASS_HTML)
+        assert exc.value.code == 1
+        assert not output.exists()
+
+    def test_shrink_below_floor_exits_nonzero(self, tmp_path):
+        """3 models against a previous 63 is a collapse, not an upstream edit."""
+        output = _schema_file(tmp_path / "out.json", 63)
+
+        with pytest.raises(SystemExit) as exc:
+            _run_main(["--output", str(output)], SINGLE_METHOD_HTML)
+        assert exc.value.code == 1
+        assert json.loads(output.read_text())["metadata"]["model_count"] == 63
+
+    def test_allow_shrink_writes_the_smaller_schema(self, tmp_path):
+        output = _schema_file(tmp_path / "out.json", 63)
+
+        _run_main(["--output", str(output), "--allow-shrink"], SINGLE_METHOD_HTML)
+
+        assert json.loads(output.read_text())["metadata"]["model_count"] == 3
+
+    def test_dry_run_also_exits_nonzero(self, tmp_path):
+        """--dry-run must not report a collapsed extraction as a result."""
+        output = _schema_file(tmp_path / "out.json", 63)
+
+        with pytest.raises(SystemExit) as exc:
+            _run_main(["--dry-run", "--output", str(output)], UNRECOGNISED_CLASS_HTML)
+        assert exc.value.code == 1
+
+    def test_small_drop_still_writes(self, tmp_path):
+        """The floor fails collapses, not the routine removal of a model."""
+        output = _schema_file(tmp_path / "out.json", 3)
+
+        _run_main(["--output", str(output)], SINGLE_METHOD_HTML)
+
+        assert json.loads(output.read_text())["metadata"]["model_count"] == 3
+
+
 class TestMainCLI:
     def test_main_dry_run(self, tmp_path, capsys):
         """main() --dry-run prints stats without writing."""
@@ -827,8 +1048,19 @@ class TestMainCLI:
         mock_session.get.side_effect = get_side_effect
         mock_session.headers = {}
 
+        # --output points at a path with no previous schema: the fixture
+        # extracts 3 models and the floor would otherwise compare them against
+        # the 63 in the committed default output.
         with (
-            patch("sys.argv", ["extract_schema", "--dry-run"]),
+            patch(
+                "sys.argv",
+                [
+                    "extract_schema",
+                    "--dry-run",
+                    "--output",
+                    str(tmp_path / "absent.json"),
+                ],
+            ),
             patch("tools.extract_schema.time.sleep"),
             patch("requests.Session", return_value=mock_session),
         ):

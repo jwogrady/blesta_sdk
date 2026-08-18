@@ -31,6 +31,11 @@ from typing import Any
 from bs4 import BeautifulSoup, Tag
 
 from tools._classify import INFERENCE_SOURCE, classify_category, infer_http_method
+from tools._floor import (
+    ExtractionFloorError,
+    enforce_model_floor,
+    previous_model_count,
+)
 from tools._release import read_php_class, read_release_version, resolve_release
 from tools.extract_plugin_schema import _fetch_bytes, parse_php_file
 
@@ -374,6 +379,20 @@ def build_schema(
     :return: Complete schema dict.
     """
     model_list = parse_model_list(models_html)
+    # The listing page always names models, so zero links is a parse failure
+    # rather than an empty upstream — the one case that cannot legitimately be
+    # empty, and the one parse_model_list() cannot distinguish on its own.
+    if not model_list:
+        raise ExtractionFloorError(
+            f"The models listing page at {MODELS_URL} parsed to zero model "
+            "links, so no model page was even fetched. That page always lists "
+            "models: an empty result means the response no longer contains a "
+            "'phpdocumentor-content' container with 'classes/' links, not that "
+            "there is nothing to extract.\n"
+            "What to do: fetch that URL and update the selectors in "
+            "parse_model_list() in tools/extract_schema.py to match, then "
+            "re-run with --dry-run."
+        )
     logger.info("Found %d models", len(model_list))
 
     models: dict[str, Any] = {}
@@ -498,6 +517,14 @@ def main() -> None:
         default=0.5,
         help="Delay between HTTP requests in seconds (default: 0.5)",
     )
+    parser.add_argument(
+        "--allow-shrink",
+        action="store_true",
+        help=(
+            "Accept a model count below the floor set by the previous run "
+            "(use only when models were genuinely removed upstream)"
+        ),
+    )
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -510,18 +537,34 @@ def main() -> None:
     session = requests.Session()
     session.headers.update({"User-Agent": "blesta-sdk-schema-extractor/1.0"})
 
-    if args.source:
-        root = resolve_release(
-            args.source, fetch_bytes=lambda u: _fetch_bytes(u, session)
+    # The floor runs before the dry-run print and before the write, so a broken
+    # extraction can neither be reported as a result nor overwrite the last good
+    # schema. Issue #111: this used to be a warning and an exit 0.
+    try:
+        if args.source:
+            source = f"app/models in the Blesta release at {args.source}"
+            root = resolve_release(
+                args.source, fetch_bytes=lambda u: _fetch_bytes(u, session)
+            )
+            schema = build_schema_from_release(root)
+        else:
+            source = MODELS_URL
+            models_html = fetch_with_delay(MODELS_URL, session, delay=args.delay)
+
+            def fetch_fn(url: str) -> str:
+                return fetch_with_delay(url, session, delay=args.delay)
+
+            schema = build_schema(models_html, fetch_fn)
+        enforce_model_floor(
+            schema["metadata"]["model_count"],
+            source=source,
+            output=args.output,
+            baseline=previous_model_count(args.output),
+            allow_shrink=args.allow_shrink,
         )
-        schema = build_schema_from_release(root)
-    else:
-        models_html = fetch_with_delay(MODELS_URL, session, delay=args.delay)
-
-        def fetch_fn(url: str) -> str:
-            return fetch_with_delay(url, session, delay=args.delay)
-
-        schema = build_schema(models_html, fetch_fn)
+    except ExtractionFloorError as exc:
+        logger.error("%s", exc)
+        raise SystemExit(1) from exc
 
     logger.info(
         "Schema: %d models, %d total methods",
