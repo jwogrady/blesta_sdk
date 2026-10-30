@@ -120,6 +120,14 @@ The `--last-request` flag (legacy mode only) returns a redacted args dict (sensi
 - `.github/workflows/test.yml` — tests, black, ruff on push/PR to master (Python 3.9/3.12/3.13 matrix)
 - `.github/workflows/publish.yml` — builds and publishes to PyPI on GitHub release via `uv build` / `uv publish` with `PYPI_TOKEN`
 
+## Related: Blesta Extension Dev Kit
+
+[blesta/extension-dev-kit](https://github.com/blesta/extension-dev-kit) is Blesta's reference (markdown + a Claude Code `SKILL.md`) for building or porting **PHP extensions that run inside Blesta 6**: modules, gateways, plugins, and 5.x/WHMCS conversions.
+
+- **Use it when** a task requires Blesta-side PHP, e.g. a custom plugin endpoint (the recommended alternative to handing full API credentials to an untrusted integration), or when you need context on how a 6.x model or plugin hook behaves.
+- **Don't use it as a schema source.** It's prose and only mentions a few `app/models` files. The bundled schemas come from the release PHP via `tools/` (`--source`); the kit can only be used to spot-check signatures.
+- This repo's code never depends on it. It's documented for users in the README's "Building Blesta extensions" section.
+
 ## SDK Usage
 
 See `SDK_USAGE.md` for detailed patterns and examples (initialization, requests, pagination, reports, discovery, async client, etc.).
