@@ -12,7 +12,7 @@ service, and does not provide idempotency guarantees by itself.
 - Parses JSON and CSV responses; surfaces body-level Blesta errors (HTTP 200 can still mean failure)
 - Provides automatic pagination, batch extraction, and report helpers
 - Supports automatic retry with exponential backoff and jitter
-- Includes bundled API schema discovery (63 core models, 8 plugin models)
+- Includes bundled API schema discovery for Blesta 6.0.4 (70 core models, 54 plugin models across 17 bundled plugins)
 - Provides environment-keyed credential management (`dev` / `stage` / `live`)
 - Redacts sensitive fields from debug/log output via `get_last_request()`
 - Ships both sync (`BlestaRequest`) and async (`AsyncBlestaRequest`) clients
@@ -446,7 +446,7 @@ except BlestaRateLimitError as e:
 
 ## API Discovery
 
-The SDK bundles machine-readable schemas for all 63 core Blesta models and 8 plugin models. Use `BlestaDiscovery` to introspect the available API surface:
+The SDK bundles machine-readable schemas for all 70 core Blesta models and 54 plugin models, extracted from the Blesta 6.0.4 release. Use `BlestaDiscovery` to introspect the available API surface:
 
 ```python
 from blesta_sdk import BlestaDiscovery
@@ -476,6 +476,10 @@ disco.suggest_pagination_pair("Clients", "getList")    # "getListCount"
 
 # Generate a capabilities report
 print(disco.generate_capabilities_report(output_format="markdown"))
+
+# Which Blesta release the bundled schemas describe
+disco.get_schema_metadata("core")["blesta_version"]       # "6.0.4"
+disco.get_schema_metadata("plugin")["plugin_versions"]    # {"order": "3.1.9", ...}
 
 # Generate JSONL index for AI embeddings
 disco.generate_ai_index("blesta_api_index.jsonl")
@@ -858,8 +862,8 @@ print(blesta_sdk.__version__)  # e.g. "0.6.0"
 ## Blesta API Reference
 
 - [API Guide](https://docs.blesta.com/developers/api) — authentication, URL structure, error codes
-- [API Models](https://source-docs.blesta.com/packages/blesta-app-models.html) — all available API models
-- [API Controllers](https://source-docs.blesta.com/packages/blesta-app-controllers.html) — admin, client, and system controllers
+- [API Models](https://source-docs.blesta.com/packages/blesta-app-models.html) — all available API models (published source docs currently cover Blesta 5.x; use `BlestaDiscovery` for the 6.x surface)
+- [API Controllers](https://source-docs.blesta.com/packages/blesta-app-controllers.html) — admin, client, and system controllers (5.x)
 
 ## Contributing
 

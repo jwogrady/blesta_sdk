@@ -4,7 +4,7 @@ Provides prefix-based inference for ``http_method`` (GET/POST/PUT/DELETE)
 and ``category`` (api/internal) used by both schema extractors.
 
 All rules are deterministic and based on method name patterns observed
-across Blesta's 63 core models and 8 plugin models.
+across Blesta's core and bundled plugin models.
 """
 
 from __future__ import annotations

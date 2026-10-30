@@ -1,14 +1,20 @@
-"""Extract a structured JSON schema from the Blesta source documentation.
+"""Extract a structured JSON schema of the Blesta core API models.
 
-Parses the phpDocumentor-generated HTML at https://source-docs.blesta.com/
-to produce a machine-readable catalog of all API models, methods, parameters,
-and return types.
+Produces a machine-readable catalog of all API models, methods, parameters,
+and return types. Two sources:
+
+- ``--source``: phpDoc docblocks in ``app/models/*.php`` of a Blesta release
+  (directory, zip, or zip URL). Use this for Blesta 6.x — the published
+  source docs stop at 5.13. Records the release version from its
+  ``manifest.json``.
+- default: the phpDocumentor-generated HTML at https://source-docs.blesta.com/
 
 Usage::
 
-    uv run python tools/extract_schema.py
-    uv run python tools/extract_schema.py --output schemas/custom.json
-    uv run python tools/extract_schema.py --dry-run
+    uv run python -m tools.extract_schema --source path/to/blesta-6.0.4.zip
+    uv run python -m tools.extract_schema
+    uv run python -m tools.extract_schema --output schemas/custom.json
+    uv run python -m tools.extract_schema --dry-run
 """
 
 from __future__ import annotations
@@ -16,6 +22,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import re
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -24,6 +31,8 @@ from typing import Any
 from bs4 import BeautifulSoup, Tag
 
 from tools._classify import INFERENCE_SOURCE, classify_category, infer_http_method
+from tools._release import read_php_class, read_release_version, resolve_release
+from tools.extract_plugin_schema import _fetch_bytes, parse_php_file
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +46,8 @@ DEFAULT_OUTPUT = (
     / "blesta_api_schema.json"
 )
 SCHEMA_VERSION = "2.0.0"
+
+_APP_MODEL_PATTERN = re.compile(r"\bclass\s+\w+\s+extends\s+AppModel\b")
 
 
 # ---------------------------------------------------------------------------
@@ -366,7 +377,6 @@ def build_schema(
     logger.info("Found %d models", len(model_list))
 
     models: dict[str, Any] = {}
-    total_methods = 0
 
     for model_info in model_list:
         name = model_info["name"]
@@ -383,14 +393,61 @@ def build_schema(
                 if pagination:
                     model_entry["pagination"] = pagination
                 models[name] = model_entry
-                total_methods += len(methods)
                 logger.info("  %s: %d methods", name, len(methods))
             else:
                 logger.warning("  %s: no public methods found, skipping", name)
         except Exception:
             logger.warning("Failed to fetch/parse %s", name, exc_info=True)
 
-    schema = {
+    schema = _assemble_schema(models, "phpdocumentor_html")
+    schema["metadata"]["source_url"] = MODELS_URL
+    return schema
+
+
+def build_schema_from_release(root: Path) -> dict[str, Any]:
+    """Build the core schema from ``app/models`` in a Blesta release.
+
+    Only classes extending ``AppModel`` are included; this skips the encoded
+    ``License`` model and the ``LicenseManager`` library, matching the set of
+    models the published source docs list.
+
+    :param root: Blesta root directory (contains ``app/models``).
+    :return: Complete schema dict.
+    """
+    models: dict[str, Any] = {}
+
+    for php_file in sorted((root / "app" / "models").glob("*.php")):
+        class_name, php_source = read_php_class(php_file)
+        if class_name is None or not _APP_MODEL_PATTERN.search(php_source):
+            logger.info("  %s: not an AppModel, skipping", php_file.name)
+            continue
+        methods = parse_php_file(php_source)
+        if not methods:
+            logger.warning("  %s: no public methods found, skipping", class_name)
+            continue
+        model_entry: dict[str, Any] = {
+            "methods": methods,
+            "source": f"app/models/{php_file.name}",
+        }
+        pagination = _detect_pagination(methods)
+        if pagination:
+            model_entry["pagination"] = pagination
+        models[class_name] = model_entry
+        logger.info("  %s: %d methods", class_name, len(methods))
+
+    schema = _assemble_schema(models, "release_php_docblocks")
+    schema["metadata"]["blesta_version"] = read_release_version(root)
+    return schema
+
+
+def _assemble_schema(models: dict[str, Any], source_type: str) -> dict[str, Any]:
+    """Wrap extracted models with schema metadata.
+
+    :param models: Model name -> model entry.
+    :param source_type: Where the models were extracted from.
+    :return: Complete schema dict.
+    """
+    return {
         "metadata": {
             "extracted_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "inference": {
@@ -405,19 +462,24 @@ def build_schema(
             },
             "model_count": len(models),
             "schema_version": SCHEMA_VERSION,
-            "source_type": "phpdocumentor_html",
-            "source_url": MODELS_URL,
-            "total_methods": total_methods,
+            "source_type": source_type,
+            "total_methods": sum(len(m["methods"]) for m in models.values()),
         },
         "models": dict(sorted(models.items())),
     }
-    return schema
 
 
 def main() -> None:
     """CLI entry point for schema extraction."""
     parser = argparse.ArgumentParser(
-        description="Extract Blesta API schema from source documentation"
+        description="Extract Blesta API schema from a release or source docs"
+    )
+    parser.add_argument(
+        "--source",
+        help=(
+            "Blesta release directory, zip, or zip URL to parse app/models "
+            "from. Without it, scrapes source-docs.blesta.com (5.x only)."
+        ),
     )
     parser.add_argument(
         "--output",
@@ -448,12 +510,18 @@ def main() -> None:
     session = requests.Session()
     session.headers.update({"User-Agent": "blesta-sdk-schema-extractor/1.0"})
 
-    models_html = fetch_with_delay(MODELS_URL, session, delay=args.delay)
+    if args.source:
+        root = resolve_release(
+            args.source, fetch_bytes=lambda u: _fetch_bytes(u, session)
+        )
+        schema = build_schema_from_release(root)
+    else:
+        models_html = fetch_with_delay(MODELS_URL, session, delay=args.delay)
 
-    def fetch_fn(url: str) -> str:
-        return fetch_with_delay(url, session, delay=args.delay)
+        def fetch_fn(url: str) -> str:
+            return fetch_with_delay(url, session, delay=args.delay)
 
-    schema = build_schema(models_html, fetch_fn)
+        schema = build_schema(models_html, fetch_fn)
 
     logger.info(
         "Schema: %d models, %d total methods",

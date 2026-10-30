@@ -290,6 +290,57 @@ def test_capabilities_report_markdown(disco):
     assert "validateCreation" not in report
 
 
+def test_capabilities_report_no_version_line_without_metadata(disco):
+    report = disco.generate_capabilities_report(output_format="markdown")
+    assert "Schema extracted from Blesta" not in report
+
+
+def test_capabilities_report_shows_blesta_version(tmp_path):
+    core_path = tmp_path / "core.json"
+    core_path.write_text(
+        json.dumps({**CORE_SCHEMA, "metadata": {"blesta_version": "6.0.4"}})
+    )
+    d = BlestaDiscovery(core_schema_path=core_path, plugin_schema_path=core_path)
+    report = d.generate_capabilities_report(output_format="markdown")
+    assert "Schema extracted from Blesta 6.0.4." in report
+
+
+# ---------------------------------------------------------------------------
+# get_schema_metadata
+# ---------------------------------------------------------------------------
+
+
+def test_get_schema_metadata_unknown_source(disco):
+    assert disco.get_schema_metadata("unknown") == {}
+
+
+def test_get_schema_metadata_without_version(disco):
+    assert "blesta_version" not in disco.get_schema_metadata("core")
+
+
+def test_get_schema_metadata_returns_copy(tmp_path):
+    core_path = tmp_path / "core.json"
+    plugin_path = tmp_path / "plugin.json"
+    core_path.write_text(
+        json.dumps({**CORE_SCHEMA, "metadata": {"blesta_version": "6.0.4"}})
+    )
+    plugin_path.write_text(
+        json.dumps({**PLUGIN_SCHEMA, "metadata": {"plugin_versions": {"cms": "4.0.1"}}})
+    )
+    d = BlestaDiscovery(core_schema_path=core_path, plugin_schema_path=plugin_path)
+    meta = d.get_schema_metadata("core")
+    assert meta == {"blesta_version": "6.0.4"}
+    meta["blesta_version"] = "mutated"
+    assert d.get_schema_metadata()["blesta_version"] == "6.0.4"
+    assert d.get_schema_metadata("plugin")["plugin_versions"] == {"cms": "4.0.1"}
+
+
+def test_bundled_schema_metadata_is_blesta_6():
+    d = BlestaDiscovery()
+    assert d.get_schema_metadata("core")["blesta_version"].startswith("6.")
+    assert "support_manager" in d.get_schema_metadata("plugin")["plugin_versions"]
+
+
 def test_capabilities_report_json(disco):
     report = disco.generate_capabilities_report(output_format="json")
     data = json.loads(report)

@@ -7,7 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Blesta 6.0.4 schemas** — bundled schemas are now extracted from the Blesta 6.0.4
+  release. Core grows from 63 to 70 models (1,126 → 1,270 methods); new models are
+  `AiConversations`, `AiMessages`, `AnalyticsReports`, `AnalyticsSnapshots`,
+  `EmailSnapshots`, `Notifications`, and `SystemUpgrade`. Existing models gain methods
+  such as notification management on `Clients`, `ClientGroups`, `Staff`, and
+  `StaffGroups`, `ServiceInvoices.get`/`getList`/`update`, `Transactions.getStatusCounts`,
+  and `PackageOptions.getValueImage`. New optional parameters:
+  `Contacts.getList`/`getListCount` (`exclude_types`), `CronTasks.addTaskRun`
+  (`company_id`), and `Invoices.add` (`preserve_status`).
+  `GatewayManager.validateCurrencyNotDefault` was removed in 6.x.
+- **Plugin schema covers all bundled plugins** — 54 models across 17 plugins (was 8 models
+  across 5), including `support_manager`, `order`, `mass_mailer`, `download_manager`,
+  and `import_manager`.
+- **`BlestaDiscovery.get_schema_metadata(source)`** — returns the schema metadata,
+  including `blesta_version` and (for plugins) `plugin_versions`. The Markdown
+  capabilities report now states which Blesta release the schema describes.
+- **`--source` for both schema extractors** — parse PHP docblocks directly from a Blesta
+  release directory, zip, or zip URL. Needed because source-docs.blesta.com still stops
+  at 5.13.
+
 ### Fixed
+
+- **Schema extractor docblock pairing** — a private/protected method's docblock could be
+  attached to the next public method, giving it the wrong description and parameters
+  (14 methods in the previous plugin schema, e.g. `domains_tlds.edit`). Implicitly public
+  methods (no visibility keyword) and methods preceded by PHP attributes are now parsed.
+- **Schema tools are run as modules** — `uv run python tools/extract_schema.py` failed with
+  `ModuleNotFoundError: tools`, which also broke the weekly schema-refresh workflow. Use
+  `uv run python -m tools.extract_schema`. The workflow now extracts from the release
+  set in the `BLESTA_RELEASE_URL` repo variable (or a `release_url` dispatch input).
+- **Schema tests target the bundled schemas** — `test_schema.py` and
+  `test_plugin_schema.py` validated the deprecated root `schemas/` copy instead of the
+  files shipped in `src/blesta_sdk/schemas/`. The stale root copy has been removed.
 
 - **`blesta call` exit code** — the `call` subcommand now exits with code 1 on non-200
   HTTP responses, matching the documented behaviour in `CLI_USAGE.md` and `README.md`.

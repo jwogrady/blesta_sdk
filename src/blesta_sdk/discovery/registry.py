@@ -128,6 +128,7 @@ class BlestaDiscovery:
         self._registry: dict[str, dict[str, Any]] | None = None
         self._source_map: dict[str, str] | None = None
         self._pagination_map: dict[str, dict[str, str]] | None = None
+        self._metadata: dict[str, dict[str, Any]] = {}
         self._loaded = False
         self._load_lock = threading.Lock()
 
@@ -223,6 +224,10 @@ class BlestaDiscovery:
                 "_ingest_schema called before _registry was set up"
             )
 
+        metadata = data.get("metadata")
+        if isinstance(metadata, dict):
+            self._metadata[source] = metadata
+
         models = data.get("models", {})
         if not isinstance(models, dict):
             logger.warning("Invalid schema structure: 'models' must be a dict")
@@ -248,6 +253,20 @@ class BlestaDiscovery:
             pagination = model_data.get("pagination")
             if pagination:
                 self._pagination_map[model_name] = pagination
+
+    def get_schema_metadata(self, source: str = "core") -> dict[str, Any]:
+        """Return the ``metadata`` block of a loaded schema.
+
+        Includes ``blesta_version`` (the Blesta release the schema was
+        extracted from, when known), ``extracted_at``, ``model_count``, and
+        ``total_methods``. The plugin schema also carries ``plugin_versions``.
+
+        :param source: ``"core"`` or ``"plugin"``.
+        :return: A copy of the metadata dict, or an empty dict if that schema
+            was not loaded or has no metadata.
+        """
+        self._ensure_loaded()
+        return dict(self._metadata.get(source, {}))
 
     def list_models(self, source: str | None = None) -> list[str]:
         """List all available model names.
@@ -408,6 +427,10 @@ class BlestaDiscovery:
 
         # Markdown
         lines = ["# Blesta API Capabilities Report", ""]
+        blesta_version = self._metadata.get("core", {}).get("blesta_version")
+        if blesta_version:
+            lines.append(f"Schema extracted from Blesta {blesta_version}.")
+            lines.append("")
         total_models = len(report_data)
         total_api = sum(m["api_methods"] for m in report_data)
         lines.append(f"**{total_models} models**, **{total_api} API methods**")

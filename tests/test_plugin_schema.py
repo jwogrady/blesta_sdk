@@ -23,7 +23,11 @@ from tools.extract_plugin_schema import (
 )
 
 PLUGIN_SCHEMA_PATH = (
-    Path(__file__).resolve().parent.parent / "schemas" / "blesta_plugin_schema.json"
+    Path(__file__).resolve().parent.parent
+    / "src"
+    / "blesta_sdk"
+    / "schemas"
+    / "blesta_plugin_schema.json"
 )
 
 
@@ -581,8 +585,17 @@ class TestPluginSchemaFile:
         assert "model_count" in meta
         assert "total_methods" in meta
         assert "plugins" in meta
-        assert meta["source_type"] == "github_php_docblocks"
+        assert meta["source_type"] == "release_php_docblocks"
         assert meta["schema_version"] == "2.0.0"
+
+    def test_schema_records_versions(self, schema):
+        meta = schema["metadata"]
+        assert meta["blesta_version"].startswith("6.")
+        assert set(meta["plugin_versions"]) == set(meta["plugins"])
+
+    def test_bundled_plugins_present(self, schema):
+        for plugin in ["support_manager", "order", "domains"]:
+            assert plugin in schema["metadata"]["plugins"]
 
     def test_schema_has_inference_metadata(self, schema):
         inference = schema["metadata"]["inference"]
@@ -591,7 +604,7 @@ class TestPluginSchemaFile:
         assert inference["http_method"]["source"] == "prefix_rules_v1"
 
     def test_plugin_model_count(self, schema):
-        assert schema["metadata"]["model_count"] >= 8
+        assert schema["metadata"]["model_count"] >= 50
 
     def test_model_count_matches(self, schema):
         assert schema["metadata"]["model_count"] == len(schema["models"])
@@ -647,7 +660,7 @@ class TestPluginSchemaFile:
         with open(PLUGIN_SCHEMA_PATH) as f:
             raw = f.read()
         data = json.loads(raw)
-        reserialized = json.dumps(data, indent=2, sort_keys=True) + "\n"
+        reserialized = json.dumps(data, separators=(",", ":"), sort_keys=True)
         assert raw == reserialized, "Schema file is not deterministically sorted"
 
     def test_no_construct_methods(self, schema):

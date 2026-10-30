@@ -28,8 +28,8 @@ uv run black src/ tests/ tools/                                  # Format code
 uv run ruff check src/ tests/ tools/                             # Lint
 uv build                                                         # Build package
 uv run pytest benchmarks/ -v --benchmark-only                   # Run benchmarks (excluded from CI)
-uv run python tools/extract_schema.py                           # Re-extract core schemas → src/blesta_sdk/schemas/
-uv run python tools/extract_plugin_schema.py                    # Re-extract plugin schemas → src/blesta_sdk/schemas/
+uv run python -m tools.extract_schema --source <blesta.zip|dir|url>         # Re-extract core schemas → src/blesta_sdk/schemas/
+uv run python -m tools.extract_plugin_schema --source <blesta.zip|dir|url>  # Re-extract plugin schemas → src/blesta_sdk/schemas/
 ```
 
 ## Project Structure
@@ -49,8 +49,8 @@ uv run python tools/extract_plugin_schema.py                    # Re-extract plu
 - `src/blesta_sdk/cli/commands/` — CLI subcommands: `call.py`, `extract.py`, `report.py`, `discover.py`
 - `src/blesta_sdk/mcp/server.py` — MCP server entry point (registered as `blesta-mcp` via `blesta_sdk.mcp.server:main`)
 - `src/blesta_sdk/mcp/tools.py`, `resources.py`, `prompts.py` — MCP tool/resource/prompt registrations
-- `src/blesta_sdk/schemas/` — **canonical** bundled JSON schemas (core: 63 models, plugin: 8 models) used by `BlestaDiscovery`
-- `tools/` — schema extraction utilities (`extract_schema.py`, `extract_plugin_schema.py`, `_classify.py`); write to `src/blesta_sdk/schemas/` by default
+- `src/blesta_sdk/schemas/` — **canonical** bundled JSON schemas (Blesta 6.0.4 — core: 70 models, plugin: 54 models from 17 bundled plugins) used by `BlestaDiscovery`; `metadata.blesta_version` records the source release
+- `tools/` — schema extraction utilities (`extract_schema.py`, `extract_plugin_schema.py`, `_classify.py`, `_release.py`); write to `src/blesta_sdk/schemas/` by default. Run as modules (`python -m tools.…`). `--source` parses PHP docblocks from a Blesta release (dir, zip, or zip URL — see https://www.blesta.com/features/developers/ for the current download); without it they fall back to source-docs.blesta.com (stops at 5.13) / GitHub `blesta/plugin-*` repos
 - `tests/` — unit tests (mocked) + one live integration test (`test_credentials`)
 - `benchmarks/` — performance benchmarks (pytest-benchmark, not collected in CI)
 

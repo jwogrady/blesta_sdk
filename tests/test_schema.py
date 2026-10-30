@@ -23,7 +23,11 @@ from tools.extract_schema import (
 )
 
 SCHEMA_PATH = (
-    Path(__file__).resolve().parent.parent / "schemas" / "blesta_api_schema.json"
+    Path(__file__).resolve().parent.parent
+    / "src"
+    / "blesta_sdk"
+    / "schemas"
+    / "blesta_api_schema.json"
 )
 
 
@@ -540,13 +544,19 @@ class TestSchemaFile:
 
     def test_schema_has_metadata(self, schema):
         meta = schema["metadata"]
-        assert "source_url" in meta
         assert "extracted_at" in meta
         assert "schema_version" in meta
         assert "model_count" in meta
         assert "total_methods" in meta
         assert meta["schema_version"] == "2.0.0"
-        assert meta["source_type"] == "phpdocumentor_html"
+        assert meta["source_type"] == "release_php_docblocks"
+
+    def test_schema_records_blesta_version(self, schema):
+        assert schema["metadata"]["blesta_version"].startswith("6.")
+
+    def test_blesta_6_models_present(self, schema):
+        for model_name in ["Notifications", "AnalyticsSnapshots", "EmailSnapshots"]:
+            assert model_name in schema["models"], f"{model_name} not in schema"
 
     def test_schema_has_inference_metadata(self, schema):
         inference = schema["metadata"]["inference"]
@@ -556,7 +566,7 @@ class TestSchemaFile:
         assert inference["category"]["source"] == "prefix_rules_v1"
 
     def test_schema_model_count(self, schema):
-        assert schema["metadata"]["model_count"] >= 60
+        assert schema["metadata"]["model_count"] >= 70
 
     def test_model_count_matches(self, schema):
         assert schema["metadata"]["model_count"] == len(schema["models"])
@@ -599,7 +609,7 @@ class TestSchemaFile:
         with open(SCHEMA_PATH) as f:
             raw = f.read()
         data = json.loads(raw)
-        reserialized = json.dumps(data, indent=2, sort_keys=True) + "\n"
+        reserialized = json.dumps(data, separators=(",", ":"), sort_keys=True)
         assert raw == reserialized, "Schema file is not deterministically sorted"
 
     def test_no_construct_methods(self, schema):
