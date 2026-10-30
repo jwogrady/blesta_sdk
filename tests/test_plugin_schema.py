@@ -896,7 +896,7 @@ class TestPluginMainFloorExits:
 
 
 class TestPluginMainCLI:
-    def test_main_dry_run(self, capsys):
+    def test_main_dry_run(self, capsys, tmp_path):
         from tools.extract_plugin_schema import main
 
         mock_session = Mock()
@@ -905,8 +905,11 @@ class TestPluginMainCLI:
         mock_session.get.return_value = resp
         mock_session.headers = {}
 
+        # A fresh output path: the bundled schema comes from a full release, so
+        # a GitHub-only run against it would (correctly) trip the floor.
+        argv = ["extract_plugin_schema", "--dry-run", "--output", str(tmp_path / "x")]
         with (
-            patch("sys.argv", ["extract_plugin_schema", "--dry-run"]),
+            patch("sys.argv", argv),
             patch("tools.extract_plugin_schema.time.sleep"),
             patch("requests.Session", return_value=mock_session),
         ):

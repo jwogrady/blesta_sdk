@@ -379,3 +379,62 @@ class TestDocblockPairing:
 
     def test_protected_static_skipped(self, methods):
         assert "hidden" not in methods
+
+
+# ---------------------------------------------------------------------------
+# Model floor in --source mode (issue #111)
+# ---------------------------------------------------------------------------
+
+
+def _run_main(module, argv):
+    from unittest.mock import patch
+
+    main = __import__(f"tools.{module}", fromlist=["main"]).main
+    with patch("sys.argv", [module, *argv]):
+        main()
+
+
+def _schema_file(path, model_count):
+    path.write_text(json.dumps({"metadata": {"model_count": model_count}}))
+    return path
+
+
+class TestReleaseModeFloor:
+    def test_core_writes_full_release(self, release, tmp_path):
+        output = tmp_path / "core.json"
+        _run_main("extract_schema", ["--source", str(release), "--output", str(output)])
+        assert json.loads(output.read_text())["metadata"]["model_count"] == 1
+
+    def test_core_shrink_below_floor_exits(self, release, tmp_path):
+        output = _schema_file(tmp_path / "core.json", 70)
+        with pytest.raises(SystemExit) as exc:
+            _run_main(
+                "extract_schema", ["--source", str(release), "--output", str(output)]
+            )
+        assert exc.value.code == 1
+        assert json.loads(output.read_text())["metadata"]["model_count"] == 70
+
+    def test_plugin_writes_full_release(self, release, tmp_path):
+        output = tmp_path / "plugin.json"
+        _run_main(
+            "extract_plugin_schema",
+            ["--source", str(release), "--output", str(output)],
+        )
+        assert json.loads(output.read_text())["metadata"]["model_count"] == 2
+
+    def test_plugin_shrink_below_floor_exits(self, release, tmp_path):
+        output = _schema_file(tmp_path / "plugin.json", 54)
+        with pytest.raises(SystemExit) as exc:
+            _run_main(
+                "extract_plugin_schema",
+                ["--source", str(release), "--output", str(output)],
+            )
+        assert exc.value.code == 1
+
+    def test_plugin_allow_shrink(self, release, tmp_path):
+        output = _schema_file(tmp_path / "plugin.json", 54)
+        _run_main(
+            "extract_plugin_schema",
+            ["--source", str(release), "--output", str(output), "--allow-shrink"],
+        )
+        assert json.loads(output.read_text())["metadata"]["model_count"] == 2
