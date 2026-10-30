@@ -241,7 +241,7 @@ df = response.to_dataframe()
 
 ## API Discovery
 
-Introspect the bundled API schemas (63 core models, 8 plugin models):
+Introspect the bundled API schemas (Blesta 6.0.4: 70 core models, 54 plugin models across 17 bundled plugins):
 
 ```python
 from blesta_sdk import BlestaDiscovery, MethodSpec
@@ -274,6 +274,10 @@ disco.resolve_http_method("Unknown", "unknown")        # "POST" (default)
 
 # Find pagination pairs
 disco.suggest_pagination_pair("Clients", "getList")    # "getListCount"
+
+# Schema provenance
+disco.get_schema_metadata("core")["blesta_version"]       # "6.0.4"
+disco.get_schema_metadata("plugin")["plugin_versions"]    # {"order": "3.1.9", ...}
 
 # Generate reports
 print(disco.generate_capabilities_report(output_format="markdown"))

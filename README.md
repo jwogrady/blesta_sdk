@@ -12,7 +12,7 @@ service, and does not provide idempotency guarantees by itself.
 - Parses JSON and CSV responses; surfaces body-level Blesta errors (HTTP 200 can still mean failure)
 - Provides automatic pagination, batch extraction, and report helpers
 - Supports automatic retry with exponential backoff and jitter
-- Includes bundled API schema discovery (63 core models, 8 plugin models)
+- Includes bundled API schema discovery for Blesta 6.0.4 (70 core models, 54 plugin models across 17 bundled plugins)
 - Provides environment-keyed credential management (`dev` / `stage` / `live`)
 - Redacts sensitive fields from debug/log output via `get_last_request()`
 - Ships both sync (`BlestaRequest`) and async (`AsyncBlestaRequest`) clients
@@ -21,6 +21,7 @@ service, and does not provide idempotency guarantees by itself.
 - Provide idempotency or deduplication for billing writes — that is the caller's responsibility
 - Guarantee that a failed POST means no record was created (server errors can occur after a write)
 - Operate as a hosted service, migration engine, or workflow orchestrator
+- Build code that runs inside Blesta (modules, plugins, gateways) — use the [Blesta Extension Dev Kit](#building-blesta-extensions) for that
 
 ## Installation
 
@@ -446,7 +447,7 @@ except BlestaRateLimitError as e:
 
 ## API Discovery
 
-The SDK bundles machine-readable schemas for all 63 core Blesta models and 8 plugin models. Use `BlestaDiscovery` to introspect the available API surface:
+The SDK bundles machine-readable schemas for all 70 core Blesta models and 54 plugin models, extracted from the Blesta 6.0.4 release. Use `BlestaDiscovery` to introspect the available API surface:
 
 ```python
 from blesta_sdk import BlestaDiscovery
@@ -476,6 +477,10 @@ disco.suggest_pagination_pair("Clients", "getList")    # "getListCount"
 
 # Generate a capabilities report
 print(disco.generate_capabilities_report(output_format="markdown"))
+
+# Which Blesta release the bundled schemas describe
+disco.get_schema_metadata("core")["blesta_version"]       # "6.0.4"
+disco.get_schema_metadata("plugin")["plugin_versions"]    # {"order": "3.1.9", ...}
 
 # Generate JSONL index for AI embeddings
 disco.generate_ai_index("blesta_api_index.jsonl")
@@ -858,8 +863,32 @@ print(blesta_sdk.__version__)  # e.g. "0.6.0"
 ## Blesta API Reference
 
 - [API Guide](https://docs.blesta.com/developers/api) — authentication, URL structure, error codes
-- [API Models](https://source-docs.blesta.com/packages/blesta-app-models.html) — all available API models
-- [API Controllers](https://source-docs.blesta.com/packages/blesta-app-controllers.html) — admin, client, and system controllers
+- [API Models](https://source-docs.blesta.com/packages/blesta-app-models.html) — all available API models (published source docs currently cover Blesta 5.x; use `BlestaDiscovery` for the 6.x surface)
+- [API Controllers](https://source-docs.blesta.com/packages/blesta-app-controllers.html) — admin, client, and system controllers (5.x)
+
+### Building Blesta extensions
+
+This SDK talks to Blesta **from the outside**, over the REST API. To build or port PHP code that runs
+**inside** Blesta 6 (a hosting/registrar module, a payment gateway, or a plugin), use Blesta's
+[Extension Dev Kit](https://github.com/blesta/extension-dev-kit) instead. It's a set of markdown
+references plus a Claude Code skill (`SKILL.md`), and it covers creating extensions and converting them
+from Blesta 5.x or WHMCS.
+
+| You want to… | Use |
+|---|---|
+| Read or write billing data from Python, a script, a CLI, or an AI agent | this SDK (`BlestaRequest`, `blesta`, `blesta-mcp`) |
+| Find which models/methods the API exposes and their parameters | this SDK (`BlestaDiscovery`) |
+| Add a provisioning module, payment gateway, or admin/client-area feature to Blesta | Extension Dev Kit |
+| Expose a narrow, custom endpoint to an untrusted integration instead of full API credentials | Extension Dev Kit (build a plugin), then call it from your own code |
+| Upgrade a custom 5.x module/plugin/gateway to Blesta 6 | Extension Dev Kit (`reference/*/convert.md`) |
+
+The two work together. Plugin models you build with the kit become callable over the API as
+`plugin_name.model_name`, and this SDK can call them like any other model. To include your own
+plugin in discovery, run `uv run python -m tools.extract_plugin_schema --source <your Blesta install>`
+and pass the output to `BlestaDiscovery(plugin_schema_path=...)`.
+
+To use the kit with Claude Code, copy or symlink its folder into your skills directory (for example
+`~/.claude/skills/extension-dev-kit`). With other AI tools, load the relevant `reference/` file as context.
 
 ## Contributing
 

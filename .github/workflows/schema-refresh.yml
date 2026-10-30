@@ -4,6 +4,10 @@ on:
   schedule:
     - cron: '0 6 * * 1'  # weekly, Monday at 06:00 UTC
   workflow_dispatch:       # allow manual trigger
+    inputs:
+      release_url:
+        description: 'Blesta release zip URL (defaults to the BLESTA_RELEASE_URL repo variable)'
+        required: false
 
 jobs:
   refresh-schemas:
@@ -26,11 +30,25 @@ jobs:
       - name: Install dependencies
         run: uv sync
 
+      # source-docs.blesta.com stops at 5.13, so schemas are extracted from the
+      # PHP source of a Blesta release. Download links carry a per-release ID
+      # (see https://www.blesta.com/features/developers/), so the URL is
+      # configured rather than derived from a version number.
+      - name: Resolve release URL
+        env:
+          RELEASE_URL: ${{ inputs.release_url || vars.BLESTA_RELEASE_URL }}
+        run: |
+          if [ -z "$RELEASE_URL" ]; then
+            echo "::error::Set the BLESTA_RELEASE_URL repo variable or pass release_url"
+            exit 1
+          fi
+          curl -fsSL -o "$RUNNER_TEMP/blesta.zip" "$RELEASE_URL"
+
       - name: Run core schema extractor
-        run: uv run python tools/extract_schema.py
+        run: uv run python -m tools.extract_schema --source "$RUNNER_TEMP/blesta.zip"
 
       - name: Run plugin schema extractor
-        run: uv run python tools/extract_plugin_schema.py
+        run: uv run python -m tools.extract_plugin_schema --source "$RUNNER_TEMP/blesta.zip"
 
       - name: Open PR if schemas changed
         uses: peter-evans/create-pull-request@v6
@@ -40,7 +58,7 @@ jobs:
           body: |
             Automated schema refresh triggered by the weekly schedule.
 
-            Both extraction tools were run against the live Blesta documentation.
+            Both extraction tools were run against the configured Blesta release.
             Review the diff to confirm the changes are expected before merging.
 
             > ⚠️ Do **not** merge if credentials or personal data appear in the diff.

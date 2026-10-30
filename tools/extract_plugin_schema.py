@@ -1,14 +1,20 @@
-"""Extract a structured JSON schema from Blesta plugin PHP source on GitHub.
+"""Extract a structured JSON schema from Blesta plugin PHP source.
 
-Parses phpDoc-annotated PHP model files from public ``blesta/plugin-*``
-repositories to produce a machine-readable catalog of plugin API methods,
-parameters, and return types.
+Parses phpDoc-annotated PHP model files to produce a machine-readable catalog
+of plugin API methods, parameters, and return types. Two sources:
+
+- ``--source``: every bundled plugin in a Blesta release (directory, zip, or
+  zip URL). Covers plugins that are not on GitHub (e.g. support_manager,
+  order) and records the release and plugin versions.
+- default: the public ``blesta/plugin-*`` GitHub repositories listed in
+  ``PLUGIN_REGISTRY``.
 
 Usage::
 
-    uv run python tools/extract_plugin_schema.py
-    uv run python tools/extract_plugin_schema.py --output schemas/custom.json
-    uv run python tools/extract_plugin_schema.py --dry-run
+    uv run python -m tools.extract_plugin_schema --source path/to/blesta-6.0.4.zip
+    uv run python -m tools.extract_plugin_schema
+    uv run python -m tools.extract_plugin_schema --output schemas/custom.json
+    uv run python -m tools.extract_plugin_schema --dry-run
 """
 
 from __future__ import annotations
@@ -23,6 +29,12 @@ from pathlib import Path
 from typing import Any
 
 from tools._classify import INFERENCE_SOURCE, classify_category, infer_http_method
+from tools._release import (
+    read_php_class,
+    read_plugin_version,
+    read_release_version,
+    resolve_release,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +57,17 @@ PLUGIN_REGISTRY: dict[str, list[str]] = {
     "softaculous": ["softaculous_queued_services"],
     "webhooks": ["webhooks_events", "webhooks_logs", "webhooks_webhooks"],
 }
+
+# A docblock immediately followed by a function declaration. The docblock body
+# must not contain "*/", otherwise a private method's docblock would be paired
+# with the next public method. PHP attributes may sit between the two.
+_METHOD_PATTERN = re.compile(
+    r"/\*\*((?:(?!\*/).)*)\*/\s*"
+    r"(?:#\[[^\]]*\]\s*)*"
+    r"((?:(?:final|abstract|static|public|protected|private)\s+)*)"
+    r"function\s+&?\s*(\w+)\s*\(",
+    re.DOTALL,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -85,16 +108,14 @@ def _extract_methods(
     """
     results: list[tuple[str, str, str, str]] = []
 
-    # Match: /** ... */ then public function name(
-    pattern = re.compile(
-        r"/\*\*(.*?)\*/\s*public\s+function\s+(\w+)\s*\(",
-        re.DOTALL,
-    )
-
-    for match in pattern.finditer(source):
+    for match in _METHOD_PATTERN.finditer(source):
         docblock_body = match.group(1)
-        method_name = match.group(2)
+        modifiers = match.group(2).split()
+        method_name = match.group(3)
 
+        # No visibility modifier means public in PHP.
+        if "private" in modifiers or "protected" in modifiers:
+            continue
         if method_name == "__construct":
             continue
 
@@ -473,6 +494,19 @@ def fetch_with_delay(url: str, session: Any, delay: float = 0.5) -> str:
     return resp.text
 
 
+def _fetch_bytes(url: str, session: Any) -> bytes:
+    """Download a binary file (e.g. a release zip).
+
+    :param url: URL to fetch.
+    :param session: A ``requests.Session`` instance.
+    :return: Response body.
+    """
+    logger.info("Downloading %s", url)
+    resp = session.get(url, timeout=300)
+    resp.raise_for_status()
+    return resp.content
+
+
 def _detect_pagination(methods: dict[str, Any]) -> dict[str, str]:
     """Detect getList/getListCount pagination pairs in a model's methods.
 
@@ -495,7 +529,6 @@ def build_plugin_schema(fetch_fn: Any) -> dict[str, Any]:
     :return: Complete plugin schema dict.
     """
     models: dict[str, Any] = {}
-    total_methods = 0
     plugins_found: list[str] = []
 
     for plugin_name, model_names in sorted(PLUGIN_REGISTRY.items()):
@@ -524,7 +557,6 @@ def build_plugin_schema(fetch_fn: Any) -> dict[str, Any]:
                     if pagination:
                         model_entry["pagination"] = pagination
                     models[model_key] = model_entry
-                    total_methods += len(methods)
                     plugin_had_models = True
                     logger.info("  %s: %d methods", model_key, len(methods))
                 else:
@@ -535,7 +567,76 @@ def build_plugin_schema(fetch_fn: Any) -> dict[str, Any]:
         if plugin_had_models:
             plugins_found.append(plugin_name)
 
-    schema = {
+    return _assemble_schema(models, plugins_found, "github_php_docblocks")
+
+
+def build_plugin_schema_from_release(root: Path) -> dict[str, Any]:
+    """Build the plugin schema from every bundled plugin in a Blesta release.
+
+    Each ``plugins/<name>/models/*.php`` file with a readable class and at
+    least one documented public method becomes a ``<plugin>.<model>`` entry.
+
+    :param root: Blesta root directory (contains ``plugins/``).
+    :return: Complete plugin schema dict.
+    """
+    models: dict[str, Any] = {}
+    plugins_found: list[str] = []
+    plugin_versions: dict[str, str] = {}
+
+    for plugin_dir in sorted((root / "plugins").iterdir()):
+        model_dir = plugin_dir / "models"
+        if not model_dir.is_dir():
+            continue
+        plugin_name = plugin_dir.name
+        plugin_had_models = False
+
+        for php_file in sorted(model_dir.glob("*.php")):
+            class_name, php_source = read_php_class(php_file)
+            if class_name is None:
+                logger.warning("  %s: no readable class, skipping", php_file)
+                continue
+            methods = parse_php_file(php_source)
+            if not methods:
+                continue
+            model_key = f"{plugin_name}.{php_file.stem}"
+            if plugin_name in PLUGIN_REGISTRY:
+                source = (
+                    f"{GITHUB_BLOB_BASE}/plugin-{plugin_name}"
+                    f"/blob/master/models/{php_file.name}"
+                )
+            else:
+                source = f"plugins/{plugin_name}/models/{php_file.name}"
+            model_entry: dict[str, Any] = {"methods": methods, "source": source}
+            pagination = _detect_pagination(methods)
+            if pagination:
+                model_entry["pagination"] = pagination
+            models[model_key] = model_entry
+            plugin_had_models = True
+            logger.info("  %s: %d methods", model_key, len(methods))
+
+        if plugin_had_models:
+            plugins_found.append(plugin_name)
+            version = read_plugin_version(plugin_dir)
+            if version:
+                plugin_versions[plugin_name] = version
+
+    schema = _assemble_schema(models, plugins_found, "release_php_docblocks")
+    schema["metadata"]["blesta_version"] = read_release_version(root)
+    schema["metadata"]["plugin_versions"] = plugin_versions
+    return schema
+
+
+def _assemble_schema(
+    models: dict[str, Any], plugins_found: list[str], source_type: str
+) -> dict[str, Any]:
+    """Wrap extracted models with schema metadata.
+
+    :param models: Model key -> model entry.
+    :param plugins_found: Names of plugins that contributed models.
+    :param source_type: Where the models were extracted from.
+    :return: Complete plugin schema dict.
+    """
+    return {
         "metadata": {
             "extracted_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "inference": {
@@ -551,18 +652,24 @@ def build_plugin_schema(fetch_fn: Any) -> dict[str, Any]:
             "model_count": len(models),
             "plugins": sorted(plugins_found),
             "schema_version": SCHEMA_VERSION,
-            "source_type": "github_php_docblocks",
-            "total_methods": total_methods,
+            "source_type": source_type,
+            "total_methods": sum(len(m["methods"]) for m in models.values()),
         },
         "models": dict(sorted(models.items())),
     }
-    return schema
 
 
 def main() -> None:
     """CLI entry point for plugin schema extraction."""
     parser = argparse.ArgumentParser(
-        description="Extract Blesta plugin schema from GitHub PHP sources"
+        description="Extract Blesta plugin schema from PHP sources"
+    )
+    parser.add_argument(
+        "--source",
+        help=(
+            "Blesta release directory, zip, or zip URL. Parses every bundled "
+            "plugin. Without it, fetches PLUGIN_REGISTRY plugins from GitHub."
+        ),
     )
     parser.add_argument(
         "--output",
@@ -596,7 +703,13 @@ def main() -> None:
     def fetch_fn(url: str) -> str:
         return fetch_with_delay(url, session, delay=args.delay)
 
-    schema = build_plugin_schema(fetch_fn)
+    if args.source:
+        root = resolve_release(
+            args.source, fetch_bytes=lambda u: _fetch_bytes(u, session)
+        )
+        schema = build_plugin_schema_from_release(root)
+    else:
+        schema = build_plugin_schema(fetch_fn)
 
     logger.info(
         "Schema: %d models, %d total methods",

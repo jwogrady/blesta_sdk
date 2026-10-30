@@ -322,8 +322,8 @@ Resources expose read-only data about the API schema without requiring live API 
 
 | URI | Description |
 |-----|-------------|
-| `blesta://schema/core` | Raw core API schema JSON (63 models) |
-| `blesta://schema/plugin` | Raw plugin schema JSON (8 models) |
+| `blesta://schema/core` | Raw core API schema JSON (70 models, Blesta 6.0.4) |
+| `blesta://schema/plugin` | Raw plugin schema JSON (54 models, Blesta 6.0.4 bundled plugins) |
 | `blesta://models` | JSON array of all model names |
 | `blesta://models/{model}` | JSON object with model name and method list |
 | `blesta://models/{model}/methods/{method}` | Full method spec JSON |

@@ -28,8 +28,8 @@ uv run black src/ tests/ tools/                                  # Format code
 uv run ruff check src/ tests/ tools/                             # Lint
 uv build                                                         # Build package
 uv run pytest benchmarks/ -v --benchmark-only                   # Run benchmarks (excluded from CI)
-uv run python tools/extract_schema.py                           # Re-extract core schemas → src/blesta_sdk/schemas/
-uv run python tools/extract_plugin_schema.py                    # Re-extract plugin schemas → src/blesta_sdk/schemas/
+uv run python -m tools.extract_schema --source <blesta.zip|dir|url>         # Re-extract core schemas → src/blesta_sdk/schemas/
+uv run python -m tools.extract_plugin_schema --source <blesta.zip|dir|url>  # Re-extract plugin schemas → src/blesta_sdk/schemas/
 ```
 
 ## Project Structure
@@ -49,8 +49,8 @@ uv run python tools/extract_plugin_schema.py                    # Re-extract plu
 - `src/blesta_sdk/cli/commands/` — CLI subcommands: `call.py`, `extract.py`, `report.py`, `discover.py`
 - `src/blesta_sdk/mcp/server.py` — MCP server entry point (registered as `blesta-mcp` via `blesta_sdk.mcp.server:main`)
 - `src/blesta_sdk/mcp/tools.py`, `resources.py`, `prompts.py` — MCP tool/resource/prompt registrations
-- `src/blesta_sdk/schemas/` — **canonical** bundled JSON schemas (core: 63 models, plugin: 8 models) used by `BlestaDiscovery`
-- `tools/` — schema extraction utilities (`extract_schema.py`, `extract_plugin_schema.py`, `_classify.py`); write to `src/blesta_sdk/schemas/` by default
+- `src/blesta_sdk/schemas/` — **canonical** bundled JSON schemas (Blesta 6.0.4 — core: 70 models, plugin: 54 models from 17 bundled plugins) used by `BlestaDiscovery`; `metadata.blesta_version` records the source release
+- `tools/` — schema extraction utilities (`extract_schema.py`, `extract_plugin_schema.py`, `_classify.py`, `_release.py`); write to `src/blesta_sdk/schemas/` by default. Run as modules (`python -m tools.…`). `--source` parses PHP docblocks from a Blesta release (dir, zip, or zip URL — see https://www.blesta.com/features/developers/ for the current download); without it they fall back to source-docs.blesta.com (stops at 5.13) / GitHub `blesta/plugin-*` repos
 - `tests/` — unit tests (mocked) + one live integration test (`test_credentials`)
 - `benchmarks/` — performance benchmarks (pytest-benchmark, not collected in CI)
 
@@ -126,6 +126,14 @@ The `--last-request` flag (legacy mode only) returns a redacted args dict (sensi
 - `.github/workflows/pr-title.yml` — rejects PR titles that aren't Conventional Commits
 - `.github/workflows/release-please.yml` — on push to master, maintains the release PR; when it's merged, creates the tag/release and calls `publish.yml`
 - `.github/workflows/publish.yml` — reusable (called by release-please, or manual dispatch on a tag): test gate, `uv build`, `uv publish` with `PYPI_TOKEN`
+
+## Related: Blesta Extension Dev Kit
+
+[blesta/extension-dev-kit](https://github.com/blesta/extension-dev-kit) is Blesta's reference (markdown + a Claude Code `SKILL.md`) for building or porting **PHP extensions that run inside Blesta 6**: modules, gateways, plugins, and 5.x/WHMCS conversions.
+
+- **Use it when** a task requires Blesta-side PHP, e.g. a custom plugin endpoint (the recommended alternative to handing full API credentials to an untrusted integration), or when you need context on how a 6.x model or plugin hook behaves.
+- **Don't use it as a schema source.** It's prose and only mentions a few `app/models` files. The bundled schemas come from the release PHP via `tools/` (`--source`); the kit can only be used to spot-check signatures.
+- This repo's code never depends on it. It's documented for users in the README's "Building Blesta extensions" section.
 
 ## SDK Usage
 
