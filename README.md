@@ -867,7 +867,7 @@ print(blesta_sdk.__version__)  # e.g. "0.6.0"
 2. Create a feature branch: `git checkout -b feature/your-feature`
 3. Run tests: `uv run pytest -v -m "not integration"`
 4. Run linting: `uv run ruff check src/ tests/ tools/`
-5. Submit a pull request
+5. Submit a pull request with a [Conventional Commits](https://www.conventionalcommits.org/) title (e.g. `feat: add X`, `fix(cli): handle Y`). PRs are squash-merged, and [release-please](https://github.com/googleapis/release-please) uses those titles to pick the next version and write the changelog. Don't bump the version or edit `CHANGELOG.md` release entries yourself.
 
 ## License
 

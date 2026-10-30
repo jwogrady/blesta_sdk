@@ -1,0 +1,35 @@
+name: Release Please
+
+on:
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+
+    steps:
+      # Opens/updates the release PR from conventional commits on master; when
+      # that PR is merged, tags vX.Y.Z and creates the GitHub release.
+      # Config: release-please-config.json, .release-please-manifest.json
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7  # v5.0.0
+        id: release
+
+  # Releases created with GITHUB_TOKEN do not trigger `release` events in other
+  # workflows, so publishing is called directly from here.
+  publish:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    permissions:
+      contents: read
+    uses: ./.github/workflows/publish.yml
+    secrets: inherit
