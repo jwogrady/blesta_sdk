@@ -29,6 +29,11 @@ from pathlib import Path
 from typing import Any
 
 from tools._classify import INFERENCE_SOURCE, classify_category, infer_http_method
+from tools._floor import (
+    ExtractionFloorError,
+    enforce_model_floor,
+    previous_model_count,
+)
 from tools._release import (
     read_php_class,
     read_plugin_version,
@@ -688,6 +693,14 @@ def main() -> None:
         default=0.5,
         help="Delay between HTTP requests in seconds (default: 0.5)",
     )
+    parser.add_argument(
+        "--allow-shrink",
+        action="store_true",
+        help=(
+            "Accept a model count below the floor set by the previous run "
+            "(use only when models were genuinely removed upstream)"
+        ),
+    )
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -703,13 +716,38 @@ def main() -> None:
     def fetch_fn(url: str) -> str:
         return fetch_with_delay(url, session, delay=args.delay)
 
-    if args.source:
-        root = resolve_release(
-            args.source, fetch_bytes=lambda u: _fetch_bytes(u, session)
+    # Same floor as the core extractor, for the same reason (issue #111): this
+    # loop skips a model it cannot fetch or parse with a warning, so without an
+    # assertion on the count a restructured upstream commits a hollow schema
+    # from a green run. With no previous schema to compare against, the GitHub
+    # mode falls back to the registry as its baseline — it is this tool's
+    # declaration of what should be there, so a first run is not unfloored.
+    # The floor also stops a GitHub-only run (PLUGIN_REGISTRY plugins) from
+    # overwriting a fuller schema extracted from a release with --source.
+    baseline = previous_model_count(args.output)
+    if baseline is None and not args.source:
+        baseline = sum(len(models) for models in PLUGIN_REGISTRY.values())
+
+    try:
+        if args.source:
+            source = f"the plugins in the Blesta release at {args.source}"
+            root = resolve_release(
+                args.source, fetch_bytes=lambda u: _fetch_bytes(u, session)
+            )
+            schema = build_plugin_schema_from_release(root)
+        else:
+            source = "the Blesta plugin repositories in PLUGIN_REGISTRY"
+            schema = build_plugin_schema(fetch_fn)
+        enforce_model_floor(
+            schema["metadata"]["model_count"],
+            source=source,
+            output=args.output,
+            baseline=baseline,
+            allow_shrink=args.allow_shrink,
         )
-        schema = build_plugin_schema_from_release(root)
-    else:
-        schema = build_plugin_schema(fetch_fn)
+    except ExtractionFloorError as exc:
+        logger.error("%s", exc)
+        raise SystemExit(1) from exc
 
     logger.info(
         "Schema: %d models, %d total methods",

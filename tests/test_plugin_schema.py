@@ -16,6 +16,7 @@ from unittest.mock import Mock, patch
 import pytest
 
 from tools.extract_plugin_schema import (
+    PLUGIN_REGISTRY,
     _detect_pagination,
     build_plugin_schema,
     fetch_with_delay,
@@ -787,8 +788,115 @@ class TestBuildPluginSchema:
                 assert model_data["pagination"]["getList"] == "getListCount"
 
 
+# ---------------------------------------------------------------------------
+# The extraction floor (issue #111)
+# ---------------------------------------------------------------------------
+
+UNRECOGNISED_PHP_SOURCE = """\
+<?php
+class CmsPages extends AppModel
+{
+    public function getList()
+    {
+        return [];
+    }
+}
+"""
+
+REGISTRY_MODEL_COUNT = sum(len(models) for models in PLUGIN_REGISTRY.values())
+
+
+def _plugin_schema_file(path, model_count):
+    """Write a minimal previous-run schema so the floor has a baseline."""
+    path.write_text(
+        json.dumps(
+            {
+                "metadata": {"model_count": model_count},
+                "models": {f"p.model{i}": {} for i in range(model_count)},
+            }
+        )
+    )
+    return path
+
+
+def _run_plugin_main(argv, source_for_url):
+    """Run extract_plugin_schema.main() with the network mocked out."""
+    from tools.extract_plugin_schema import main
+
+    def get_side_effect(url, **kwargs):
+        resp = Mock(text=source_for_url(url))
+        resp.raise_for_status = Mock()
+        return resp
+
+    mock_session = Mock()
+    mock_session.get.side_effect = get_side_effect
+    mock_session.headers = {}
+
+    with (
+        patch("sys.argv", ["extract_plugin_schema", *argv]),
+        patch("tools.extract_plugin_schema.time.sleep"),
+        patch("requests.Session", return_value=mock_session),
+    ):
+        main()
+
+
+class TestPluginMainFloorExits:
+    def test_unrecognised_sources_exit_nonzero(self, tmp_path):
+        """Every file 200s, none carries a docblock the parser recognises."""
+        output = _plugin_schema_file(tmp_path / "out.json", REGISTRY_MODEL_COUNT)
+
+        with pytest.raises(SystemExit) as exc:
+            _run_plugin_main(
+                ["--output", str(output)], lambda url: UNRECOGNISED_PHP_SOURCE
+            )
+        assert exc.value.code == 1
+        meta = json.loads(output.read_text())["metadata"]
+        assert meta["model_count"] == REGISTRY_MODEL_COUNT
+
+    def test_registry_is_the_baseline_without_a_previous_schema(self, tmp_path):
+        """A first run is still floored: the registry says what should be there."""
+        output = tmp_path / "out.json"
+
+        def source_for_url(url):
+            # Only the cms model still parses; the rest of the registry is lost.
+            return PLUGIN_PHP_SOURCE if "plugin-cms/" in url else "<?php\n"
+
+        with pytest.raises(SystemExit) as exc:
+            _run_plugin_main(["--output", str(output)], source_for_url)
+        assert exc.value.code == 1
+        assert not output.exists()
+
+    def test_allow_shrink_writes_the_smaller_schema(self, tmp_path):
+        output = _plugin_schema_file(tmp_path / "out.json", REGISTRY_MODEL_COUNT)
+
+        def source_for_url(url):
+            return PLUGIN_PHP_SOURCE if "plugin-cms/" in url else "<?php\n"
+
+        _run_plugin_main(["--output", str(output), "--allow-shrink"], source_for_url)
+
+        assert json.loads(output.read_text())["metadata"]["model_count"] == 1
+
+    def test_dry_run_also_exits_nonzero(self, tmp_path):
+        output = _plugin_schema_file(tmp_path / "out.json", REGISTRY_MODEL_COUNT)
+
+        with pytest.raises(SystemExit) as exc:
+            _run_plugin_main(
+                ["--dry-run", "--output", str(output)],
+                lambda url: UNRECOGNISED_PHP_SOURCE,
+            )
+        assert exc.value.code == 1
+
+    def test_full_extraction_still_writes(self, tmp_path):
+        output = _plugin_schema_file(tmp_path / "out.json", REGISTRY_MODEL_COUNT)
+
+        _run_plugin_main(["--output", str(output)], lambda url: PLUGIN_PHP_SOURCE)
+
+        meta = json.loads(output.read_text())["metadata"]
+        assert meta["model_count"] == REGISTRY_MODEL_COUNT
+
+
 class TestPluginMainCLI:
-    def test_main_dry_run(self, capsys):
+    def test_main_dry_run(self, capsys, tmp_path):
         from tools.extract_plugin_schema import main
 
         mock_session = Mock()
@@ -797,8 +905,11 @@ class TestPluginMainCLI:
         mock_session.get.return_value = resp
         mock_session.headers = {}
 
+        # A fresh output path: the bundled schema comes from a full release, so
+        # a GitHub-only run against it would (correctly) trip the floor.
+        argv = ["extract_plugin_schema", "--dry-run", "--output", str(tmp_path / "x")]
         with (
-            patch("sys.argv", ["extract_plugin_schema", "--dry-run"]),
+            patch("sys.argv", argv),
             patch("tools.extract_plugin_schema.time.sleep"),
             patch("requests.Session", return_value=mock_session),
         ):
