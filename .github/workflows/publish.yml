@@ -1,8 +1,10 @@
 name: Build and Publish
 
 on:
-  release:
-    types: [published]
+  # Called by release-please.yml after it creates a release.
+  workflow_call:
+  # Manual fallback: run against a release tag to (re)publish it.
+  workflow_dispatch:
 
 permissions:
   contents: read

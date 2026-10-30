@@ -85,14 +85,19 @@ uv run python tools/extract_plugin_schema.py                    # Re-extract plu
 
 ## Versioning
 
-- Semantic versioning (MAJOR.MINOR.PATCH); version in `pyproject.toml` and `CHANGELOG.md`
+- Semantic versioning (MAJOR.MINOR.PATCH), managed by [release-please](https://github.com/googleapis/release-please). **Don't bump versions or edit release entries in `CHANGELOG.md` by hand.**
+- release-please reads conventional commits on `master`, keeps a release PR open, and on merge bumps `pyproject.toml`, `uv.lock`, and `.release-please-manifest.json`, writes the `CHANGELOG.md` entry, tags `vX.Y.Z`, creates the GitHub release, and publishes to PyPI
+- Pre-1.0: `feat` → minor, `fix`/`perf` → patch, breaking (`!`) → minor
+- Config: `release-please-config.json`; current version: `.release-please-manifest.json`
 - `__version__` exposed at runtime via `importlib.metadata`
 - Git tags: `vX.Y.Z`
 
 ## Commit Style
 
-- Lowercase imperative messages (`add CLI tests`, `fix logging side effect`)
-- No conventional commit prefixes
+- [Conventional Commits](https://www.conventionalcommits.org/): `type(optional-scope): lowercase imperative summary` — e.g. `feat(discovery): add get_schema_metadata`, `fix(cli): exit 1 on non-200 responses`
+- Types: `feat`, `fix`, `perf`, `revert`, `docs`, `deps` (appear in the changelog); `refactor`, `test`, `build`, `ci`, `chore`, `style` (hidden)
+- Breaking changes: `feat!:` / `fix!:` or a `BREAKING CHANGE:` footer
+- PRs are squash-merged, so the **PR title** is the commit release-please reads; `pr-title.yml` enforces the format
 - No Co-Authored-By or attribution lines
 
 ## Testing
@@ -118,7 +123,9 @@ The `--last-request` flag (legacy mode only) returns a redacted args dict (sensi
 ## CI/CD
 
 - `.github/workflows/test.yml` — tests, black, ruff on push/PR to master (Python 3.9/3.12/3.13 matrix)
-- `.github/workflows/publish.yml` — builds and publishes to PyPI on GitHub release via `uv build` / `uv publish` with `PYPI_TOKEN`
+- `.github/workflows/pr-title.yml` — rejects PR titles that aren't Conventional Commits
+- `.github/workflows/release-please.yml` — on push to master, maintains the release PR; when it's merged, creates the tag/release and calls `publish.yml`
+- `.github/workflows/publish.yml` — reusable (called by release-please, or manual dispatch on a tag): test gate, `uv build`, `uv publish` with `PYPI_TOKEN`
 
 ## SDK Usage
 
