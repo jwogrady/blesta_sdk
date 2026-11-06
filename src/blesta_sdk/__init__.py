@@ -1,5 +1,6 @@
 """Python SDK and CLI for the Blesta billing platform REST API."""
 
+from blesta_sdk.core.cli_client import BlestaCLIRequest
 from blesta_sdk.core.client import BlestaRequest
 from blesta_sdk.core.config import BlestaEnvConfig
 from blesta_sdk.core.errors import (
@@ -18,6 +19,7 @@ __all__ = [
     "AsyncBlestaRequest",
     "BlestaAPIError",
     "BlestaAuthError",
+    "BlestaCLIRequest",
     "BlestaConnectionError",
     "BlestaDiscovery",
     "BlestaEnvConfig",

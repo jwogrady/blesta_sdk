@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from blesta_sdk.core.cli_client import BlestaCLIRequest
 from blesta_sdk.core.client import BlestaRequest
 from blesta_sdk.core.config import BlestaEnvConfig
 from blesta_sdk.core.errors import (
@@ -18,6 +19,7 @@ from blesta_sdk.core.response import BlestaResponse
 __all__ = [
     "BlestaAPIError",
     "BlestaAuthError",
+    "BlestaCLIRequest",
     "BlestaConnectionError",
     "BlestaEnvConfig",
     "BlestaError",

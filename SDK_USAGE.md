@@ -9,7 +9,7 @@ from both the legacy flat path and the new canonical sub-packages:
 
 ```python
 # Recommended: top-level imports (always stable)
-from blesta_sdk import BlestaRequest, AsyncBlestaRequest
+from blesta_sdk import BlestaRequest, AsyncBlestaRequest, BlestaCLIRequest
 from blesta_sdk import BlestaEnvConfig
 from blesta_sdk import BlestaDiscovery, MethodSpec
 from blesta_sdk import BlestaError, BlestaAPIError, BlestaAuthError
@@ -17,7 +17,7 @@ from blesta_sdk import BlestaRateLimitError, BlestaServerError, PaginationError
 from blesta_sdk import BlestaResponse
 
 # Canonical sub-package imports (v0.8+)
-from blesta_sdk.core import BlestaRequest, BlestaEnvConfig
+from blesta_sdk.core import BlestaRequest, BlestaCLIRequest, BlestaEnvConfig
 from blesta_sdk.discovery import BlestaDiscovery, MethodSpec
 ```
 
@@ -358,6 +358,31 @@ In concurrent contexts, `get_last_request()` returns the last request from the c
 # Safe in concurrent tasks — each task sees its own last request
 last = api.get_last_request()
 ```
+
+## PHP CLI Client
+
+`BlestaCLIRequest` has the `BlestaRequest` API but runs Blesta's PHP CLI, locally or over SSH:
+
+```python
+from blesta_sdk import BlestaCLIRequest
+
+api = BlestaCLIRequest(
+    "/var/www/blesta/index.php", user, key,
+    php="php",                       # PHP executable on the host that runs Blesta
+    ssh="deploy@billing.example.com",  # None runs php locally
+    ssh_options=["-p", "2222"],      # extra ssh args; BatchMode=yes is always added
+    ssh_command="ssh",
+    timeout=30,
+    raise_on_error=False,
+)
+resp = api.get("clients", "get", {"client_id": 1})
+```
+
+The status code is inferred from Blesta's `message` (the CLI prints none). A run that
+can't start, times out, or fails to connect over SSH gives `status_code=0`. A Blesta
+crash or output that isn't JSON gives `500`. `encode_params()` in
+`blesta_sdk.core.cli_client` shows how `args` become the `-p` string (PHP
+`http_build_query` rules).
 
 ## Environment Configuration
 

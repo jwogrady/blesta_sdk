@@ -26,6 +26,7 @@ def test_all_exports():
         "AsyncBlestaRequest",
         "BlestaAPIError",
         "BlestaAuthError",
+        "BlestaCLIRequest",
         "BlestaConnectionError",
         "BlestaDiscovery",
         "BlestaEnvConfig",

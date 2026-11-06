@@ -37,6 +37,7 @@ uv run python -m tools.extract_plugin_schema --source <blesta.zip|dir|url>  # Re
 - `src/blesta_sdk/__init__.py` — public API exports (`__all__`), lazy import for `AsyncBlestaRequest`
 - `src/blesta_sdk/core/client.py` — `BlestaRequest`: sync HTTP client (GET/POST/PUT/DELETE, `submit()`, `call()`, `call_all()`, `count_for()`, pagination, reports, batch extraction)
 - `src/blesta_sdk/core/async_client.py` — `AsyncBlestaRequest`: async HTTP client (mirrors sync API, adds `get_all_fast()` and `get_report_series_concurrent()`)
+- `src/blesta_sdk/core/cli_client.py` — `BlestaCLIRequest`: `BlestaRequest` subclass that runs Blesta's PHP CLI (`php index.php api/...json -u -k -m -p`) locally or over SSH (command on stdin to `sh -s`); infers status from the body's `message`; `encode_params()` mirrors PHP `http_build_query`
 - `src/blesta_sdk/core/response.py` — `BlestaResponse`: response parsing, CSV/JSON detection, error extraction, `raise_for_status()`, DataFrame conversion
 - `src/blesta_sdk/core/pagination.py` — `PaginationState`: shared pagination logic with stuck-page and alternating-loop cycle detection; used by both sync and async clients
 - `src/blesta_sdk/core/redaction.py` — `redact_args()`: shared sensitive-key scrubber used by both clients for `get_last_request()` output

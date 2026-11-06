@@ -526,6 +526,44 @@ async with AsyncBlestaRequest(url, user, key) as api:
 
 Constructor accepts `max_connections` and `max_keepalive_connections` (default `10`/`10`) instead of the sync `pool_connections`/`pool_maxsize`.
 
+## PHP CLI Client
+
+`BlestaCLIRequest` reaches Blesta through its PHP command line instead of HTTP. It runs
+`php index.php api/<model>/<method>.json -u USER -k KEY -m METHOD -p PARAMS` on the Blesta
+server itself, or on another machine over SSH. Use it where the HTTP API is unreachable or
+switched off, or from cron on the billing host. It has the same methods as `BlestaRequest`
+(`get`, `post`, `call`, `get_all`, reports and the rest) and returns the same `BlestaResponse`.
+
+```python
+from blesta_sdk import BlestaCLIRequest
+
+# On the Blesta server
+api = BlestaCLIRequest("/var/www/blesta/index.php", "api_user", "api_key")
+
+# Over SSH (key-based; BatchMode=yes is always set, so ssh never prompts)
+api = BlestaCLIRequest(
+    "/var/www/blesta/index.php", "api_user", "api_key",
+    ssh="deploy@billing.example.com",
+    ssh_options=["-p", "2222", "-i", "~/.ssh/blesta"],
+)
+
+clients = api.get_all("clients", "getList", {"status": "active"})
+```
+
+How it differs from HTTP:
+
+- **Status codes are inferred.** The CLI prints the JSON body but no status, so the client maps
+  Blesta's `message` back to the code the HTTP API would send (401, 404, 400 with `errors`, and so on).
+  A run that can't start, times out, or whose SSH connection fails gives `status_code=0`
+  (`BlestaConnectionError`). A Blesta crash or output that isn't JSON gives `500`.
+- **Parameters are sent the way PHP's `http_build_query` would encode them.** Nested dicts and lists
+  become `vars[name]=...`, booleans become `1`/`0`, and `None` is dropped.
+- **No retries.** There is no rate limiting on the CLI, and a failed write is not retried.
+- **The key is on the command line where `php` runs.** Blesta reads it only from argv, so other users
+  on that machine can see it in `ps` while a request runs. Over SSH, the command goes to the remote
+  shell on stdin, so the key never appears on the local command line. Run it as a user you trust on
+  that host.
+
 ## Sync vs Async
 
 ### Use `BlestaRequest` (sync) for
@@ -790,6 +828,12 @@ Same methods as `BlestaRequest`, all `async`. Additional async-specific methods:
 `extract()` runs targets concurrently via `asyncio.gather()`. `iter_all()` is an async generator (`async for`). Supports `async with` context manager.
 
 In concurrent contexts, `get_last_request()` returns the last request for the current asyncio task only.
+
+### `BlestaCLIRequest(index_path, user, key, *, php="php", ssh=None, ssh_options=(), ssh_command="ssh", timeout=30, raise_on_error=False, discovery=None)`
+
+Same methods as `BlestaRequest`, run through Blesta's PHP CLI locally or over SSH (see
+[PHP CLI Client](#php-cli-client)). `get_last_request()` returns the CLI URI
+(`api/clients/getList.json`) as `"url"`. Supports context manager.
 
 ### `BlestaEnvConfig(env, *, url=None, user=None, key=None)`
 
