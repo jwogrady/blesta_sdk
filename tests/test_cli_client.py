@@ -169,6 +169,29 @@ def test_php_executable_is_configurable(fake: Path):
     assert api.get("companies", "getAll").data["index"] == "/srv/blesta/index.php"
 
 
+def test_php_can_be_a_command_such_as_sudo(fake: Path):
+    """A list runs php as another user, e.g. the web server's."""
+    (fake / "sudo").write_text('#!/bin/sh\nshift 2\nexec "$@"\n')
+    (fake / "sudo").chmod(0o755)
+    api = local(php=["sudo", "-u", "nobody", "php"])
+
+    assert api.get("companies", "getAll").status_code == 200
+    assert php_calls(fake)[0][1] == "api/companies/getAll.json"
+
+
+def test_php_command_runs_over_ssh_too(fake: Path):
+    (fake / "sudo").write_text('#!/bin/sh\nshift 2\nexec "$@"\n')
+    (fake / "sudo").chmod(0o755)
+    api = local(php=["sudo", "-u", "nobody", "php"], ssh="root@billing")
+
+    assert api.get("companies", "getAll").status_code == 200
+
+
+def test_an_empty_php_command_is_rejected():
+    with pytest.raises(ValueError):
+        local(php=[])
+
+
 def test_rejected_key_maps_to_401(fake: Path):
     api = BlestaCLIRequest("/var/www/blesta/index.php", "api", "wrong")
 

@@ -545,6 +545,9 @@ api = BlestaCLIRequest(
     "/var/www/blesta/index.php", "api_user", "api_key",
     ssh="deploy@billing.example.com",
     ssh_options=["-p", "2222", "-i", "~/.ssh/blesta"],
+    # Run Blesta as the web server's user, as its cron does, so cache and
+    # log files keep the right owner
+    php=["sudo", "-u", "nobody", "/usr/local/lsws/lsphp82/bin/php"],
 )
 
 clients = api.get_all("clients", "getList", {"status": "active"})
@@ -829,7 +832,7 @@ Same methods as `BlestaRequest`, all `async`. Additional async-specific methods:
 
 In concurrent contexts, `get_last_request()` returns the last request for the current asyncio task only.
 
-### `BlestaCLIRequest(index_path, user, key, *, php="php", ssh=None, ssh_options=(), ssh_command="ssh", timeout=30, raise_on_error=False, discovery=None)`
+### `BlestaCLIRequest(index_path, user, key, *, php="php" | [command...], ssh=None, ssh_options=(), ssh_command="ssh", timeout=30, raise_on_error=False, discovery=None)`
 
 Same methods as `BlestaRequest`, run through Blesta's PHP CLI locally or over SSH (see
 [PHP CLI Client](#php-cli-client)). `get_last_request()` returns the CLI URI

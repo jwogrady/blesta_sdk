@@ -130,7 +130,10 @@ class BlestaCLIRequest(BlestaRequest):
         runs ``php``.
     :param user: API username.
     :param key: API key.
-    :param php: The PHP executable. Defaults to ``"php"``.
+    :param php: The PHP executable, or a command list that ends with it,
+        such as ``["sudo", "-u", "nobody", "/usr/local/lsws/lsphp82/bin/php"]``
+        to run Blesta as the web server's user, as its cron does.
+        Defaults to ``"php"``.
     :param ssh: SSH destination (``user@host`` or a ``~/.ssh/config``
         alias). ``None`` runs ``php`` locally.
     :param ssh_options: Extra ``ssh`` arguments, such as
@@ -149,7 +152,7 @@ class BlestaCLIRequest(BlestaRequest):
         user: str,
         key: str,
         *,
-        php: str = "php",
+        php: str | Sequence[str] = "php",
         ssh: str | None = None,
         ssh_options: Sequence[str] = (),
         ssh_command: str = "ssh",
@@ -161,7 +164,9 @@ class BlestaCLIRequest(BlestaRequest):
         self.index_path = index_path
         self.user = user
         self.key = key
-        self.php = php
+        self.php = [php] if isinstance(php, str) else list(php)
+        if not self.php:
+            raise ValueError("php cannot be an empty command")
         self.ssh = ssh
         self.ssh_options = list(ssh_options)
         self.ssh_command = ssh_command
@@ -212,7 +217,7 @@ class BlestaCLIRequest(BlestaRequest):
         uri = f"api/{model}/{method}.json"
         self._last_request = {"url": uri, "args": args.copy()}
 
-        command = [self.php, self.index_path, uri]
+        command = [*self.php, self.index_path, uri]
         command += ["-u", self.user, "-k", self.key, "-m", action]
         params = encode_params(args)
         if params:
@@ -226,7 +231,7 @@ class BlestaCLIRequest(BlestaRequest):
     def _run(self, command: list[str]) -> BlestaResponse:
         if self.ssh is None:
             argv = command
-            program = self.php
+            program = self.php[0]
             run_input: dict[str, Any] = {"stdin": subprocess.DEVNULL}
         else:
             argv = [self.ssh_command, "-o", "BatchMode=yes", *self.ssh_options]

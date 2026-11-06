@@ -368,7 +368,7 @@ from blesta_sdk import BlestaCLIRequest
 
 api = BlestaCLIRequest(
     "/var/www/blesta/index.php", user, key,
-    php="php",                       # PHP executable on the host that runs Blesta
+    php="php",                       # or a command: ["sudo", "-u", "nobody", "php"]
     ssh="deploy@billing.example.com",  # None runs php locally
     ssh_options=["-p", "2222"],      # extra ssh args; BatchMode=yes is always added
     ssh_command="ssh",
